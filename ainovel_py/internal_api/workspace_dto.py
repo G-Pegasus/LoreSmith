@@ -2,16 +2,17 @@ from __future__ import annotations
 
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from ainovel_py.internal_api.dto import MetadataSpec
 
 
 class WorkspaceStory(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     story_id: str = ""
     title: str = ""
     premise: str = ""
-    style: str = ""
 
 
 class WorkspaceNode(BaseModel):

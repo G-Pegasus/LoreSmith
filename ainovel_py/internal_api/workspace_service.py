@@ -75,6 +75,7 @@ class WorkspaceService:
         current_run = meta.get("activeRunId")
         run_sync_updated_at = meta.get("runSyncUpdatedAt")
         pending_checkpoint = store.signals.load_pending_checkpoint()
+        run_sync_status = self._resolve_workspace_run_status(str(current_run or ""), progress, pending_checkpoint)
         return {
             "storyId": workspace_id,
             "title": self._resolve_workspace_title(workspace_id, premise, run_meta.story_title if run_meta else ""),
@@ -89,11 +90,45 @@ class WorkspaceService:
             "runBridge": {
                 "activeRunId": current_run,
                 "runAfterSeq": int(meta.get("runAfterSeq", 0) or 0),
-                "runSyncStatus": ("waiting_input" if pending_checkpoint is not None else ("running" if current_run and progress and (progress.in_progress_chapter > 0 or progress.current_chapter > len(progress.completed_chapters or [])) else ("idle" if current_run else "idle"))),
+                "runSyncStatus": run_sync_status,
                 "runSyncUpdatedAt": run_sync_updated_at,
                 "lastCompletedChapter": f"第 {max(progress.completed_chapters)} 章" if progress and progress.completed_chapters else None,
             },
         }
+
+    def _resolve_workspace_run_status(self, run_id: str, progress, pending_checkpoint) -> str:
+        if not run_id:
+            return "idle"
+        registry_status = self._load_registry_run_status(run_id)
+        if registry_status:
+            return registry_status
+        if pending_checkpoint is not None:
+            return "waiting_input"
+        completed = progress.completed_chapters if progress else []
+        if progress and (progress.in_progress_chapter > 0 or progress.current_chapter > len(completed or [])):
+            return "running"
+        return "idle"
+
+    def _load_registry_run_status(self, run_id: str) -> str:
+        registry_path = Path("output") / "internal_api" / "runs.json"
+        if not registry_path.exists():
+            return ""
+        try:
+            data = json.loads(registry_path.read_text(encoding="utf-8"))
+        except Exception:
+            return ""
+        if not isinstance(data, list):
+            return ""
+        for item in data:
+            if not isinstance(item, dict) or str(item.get("run_id", "") or "") != run_id:
+                continue
+            state_override = str(item.get("state_override", "") or "")
+            if state_override in {"failed", "canceled"}:
+                return state_override
+            if state_override:
+                return state_override
+            return ""
+        return ""
 
     def create_workspace_node(self, story_id: str, req) -> dict[str, object]:
         snapshot = self.get_workspace_snapshot(story_id)
@@ -623,7 +658,7 @@ class WorkspaceService:
             "story_id": req.story.story_id,
             "story_title": req.story.title,
             "premise": req.story.premise,
-            "style": req.story.style,
+            "style": "",
             "node_id": req.node.node_id,
             "node_type": req.node.type,
             "node_title": req.node.title,
@@ -944,8 +979,6 @@ class WorkspaceService:
         else:
             cfg = load_config()
         cfg.output_dir = str(self._resolve_workspace_output_dir(req))
-        if req.story.style:
-            cfg.style = req.story.style
         cfg.fill_defaults()
         if cfg.provider not in cfg.providers:
             cfg.providers[cfg.provider] = ProviderConfig(api_key="")

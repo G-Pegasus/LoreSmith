@@ -1,13 +1,13 @@
 {
-  "provider": "openrouter",
-  "model": "qwen3.5-flash",
+  "provider": "deepseek",
+  "model": "deepseek-v4-pro",
   "providers": {
-    "openrouter": {
-      "api_key": "sk-25444e18366b4f52aca6054a7312ffc3",
-      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "deepseek": {
+      "api_key": "YOUR_API_KEY_HERE ",
+      "base_url": "https://api.deepseek.com",
       "models": [
-        "qwen3.5-flash",
-        "qwen3.5-plus"
+        "deepseek-v4-flash",
+        "deepseek-v4-pro"
       ],
       "style": "default",
       "context_window": 128000

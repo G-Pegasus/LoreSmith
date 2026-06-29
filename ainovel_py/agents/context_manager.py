@@ -17,16 +17,24 @@ class ContextSnapshot:
 @dataclass
 class WriterRestorePack:
     recent_summaries: list[str] = field(default_factory=list)
+    emotional_landing: str = ""
+    narrative_tone: str = ""
+    sensory_anchor: str = ""
     style_rules: list[str] = field(default_factory=list)
     foreshadow: list[str] = field(default_factory=list)
     review_lessons: list[str] = field(default_factory=list)
 
     def refresh(self, context: dict[str, Any]) -> None:
-        self.recent_summaries = [
-            str(item.get("summary", "") or "")
+        recent_items = [
+            item
             for item in (context.get("recent_summaries") or [])
             if isinstance(item, dict) and str(item.get("summary", "") or "").strip()
-        ][:4]
+        ]
+        self.recent_summaries = [str(item.get("summary", "") or "") for item in recent_items][:4]
+        latest = recent_items[-1] if recent_items else {}
+        self.emotional_landing = str(latest.get("emotional_landing", "") or "").strip()
+        self.narrative_tone = str(latest.get("narrative_tone", "") or "").strip()
+        self.sensory_anchor = str(latest.get("sensory_anchor", "") or "").strip()
         style = context.get("style_rules") or {}
         self.style_rules = [str(x) for x in (style.get("prose") or []) if str(x).strip()][:5]
         self.foreshadow = [
@@ -43,6 +51,15 @@ class WriterRestorePack:
 
     def build_text(self) -> str:
         parts: list[str] = []
+        resonance: list[str] = []
+        if self.emotional_landing:
+            resonance.append(f"上一章结束时，读者停留在：{self.emotional_landing}")
+        if self.narrative_tone:
+            resonance.append(f"上一章主导语调：{self.narrative_tone}")
+        if self.sensory_anchor:
+            resonance.append(f"可延续或反衬的感官记忆：{self.sensory_anchor}")
+        if resonance:
+            parts.append("[上一章情感余韵]\n" + "\n".join(f"- {x}" for x in resonance))
         if self.recent_summaries:
             parts.append("[最近章节摘要]\n" + "\n".join(f"- {x}" for x in self.recent_summaries))
         if self.style_rules:
@@ -124,12 +141,13 @@ class ContextManager:
         chapter_plan = context.get("chapter_plan") or {}
         if chapter_plan:
             contract = chapter_plan.get("contract") or {}
+            direction = str(contract.get("chapter_direction", "") or chapter_plan.get("goal", "") or "")
+            avoid = contract.get("avoid") or contract.get("forbidden_moves") or []
             summary_lines.append(
                 "[章节计划]\n"
-                + f"目标：{chapter_plan.get('goal', '')}\n"
-                + f"冲突：{chapter_plan.get('conflict', '')}\n"
-                + f"必达推进：{', '.join(contract.get('required_beats') or [])}\n"
-                + f"禁止项：{', '.join(contract.get('forbidden_moves') or [])}"
+                + f"方向：{direction}\n"
+                + f"情绪：{contract.get('emotion_target', '') or chapter_plan.get('emotion_arc', '')}\n"
+                + f"避坑：{', '.join(str(x) for x in avoid[:2])}"
             )
             compacted.append("chapter_plan")
 

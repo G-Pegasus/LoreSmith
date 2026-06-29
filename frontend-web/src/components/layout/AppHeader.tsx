@@ -24,11 +24,6 @@ const navItems = [
     label: '共享工作台',
     isActive: (pathname: string) => /^\/stories\/[^/]+\/(workspace|reference)$/.test(pathname),
   },
-  {
-    to: '/read',
-    label: '阅读',
-    isActive: (pathname: string) => pathname === '/read',
-  },
 ]
 
 export function AppHeader() {

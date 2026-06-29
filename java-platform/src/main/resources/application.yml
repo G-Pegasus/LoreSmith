@@ -3,12 +3,12 @@ server:
 
 spring:
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://127.0.0.1:5432/ainovel}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://127.0.0.1:5432/ainovel?sslmode=disable&TimeZone=Asia/Shanghai}
     username: ${SPRING_DATASOURCE_USERNAME:ainovel}
     password: ${SPRING_DATASOURCE_PASSWORD:ainovel}
     driver-class-name: org.postgresql.Driver
   flyway:
-    enabled: true
+    enabled: false
     locations: classpath:db/migration
 
 springdoc:
@@ -22,3 +22,6 @@ management:
     web:
       exposure:
         include: health,info
+
+ainovel:
+  config-path: ${AINOVEL_CONFIG:dev_config.json}

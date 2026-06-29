@@ -185,13 +185,18 @@ class DraftStore:
             emotion_arc=str(data.get("emotion_arc", "") or ""),
             notes=str(data.get("notes", "") or ""),
             contract=ChapterContract(
+                chapter_direction=str(contract.get("chapter_direction", "") or ""),
                 required_beats=[str(x) for x in (contract.get("required_beats") or [])],
+                avoid=[str(x) for x in (contract.get("avoid") or [])],
                 forbidden_moves=[str(x) for x in (contract.get("forbidden_moves") or [])],
                 continuity_checks=[str(x) for x in (contract.get("continuity_checks") or [])],
                 evaluation_focus=[str(x) for x in (contract.get("evaluation_focus") or [])],
                 emotion_target=str(contract.get("emotion_target", "") or ""),
                 payoff_points=[str(x) for x in (contract.get("payoff_points") or [])],
                 hook_goal=str(contract.get("hook_goal", "") or ""),
+                min_words=int(contract.get("min_words", 1200) or 1200),
+                target_words=int(contract.get("target_words", 1800) or 1800),
+                max_words=int(contract.get("max_words", 2600) or 2600),
             ),
         )
 
@@ -255,6 +260,9 @@ class SummaryStore:
             summary=str(data.get("summary", "") or ""),
             characters=[str(x) for x in (data.get("characters") or [])],
             key_events=[str(x) for x in (data.get("key_events") or [])],
+            emotional_landing=str(data.get("emotional_landing", "") or ""),
+            narrative_tone=str(data.get("narrative_tone", "") or ""),
+            sensory_anchor=str(data.get("sensory_anchor", "") or ""),
         )
 
     def load_recent_summaries(self, current: int, count: int) -> list[ChapterSummary]:

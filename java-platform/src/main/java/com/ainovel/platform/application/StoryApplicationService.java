@@ -63,7 +63,7 @@ public class StoryApplicationService {
                 request.title(),
                 request.premise(),
                 request.genre() == null ? "" : request.genre().trim(),
-                request.style() == null || request.style().isBlank() ? "default" : request.style(),
+                "",
                 request.characters() == null ? List.of() : request.characters().stream()
                         .filter(item -> item != null && item.name() != null && !item.name().isBlank())
                         .map(item -> Map.<String, Object>of(
@@ -90,13 +90,11 @@ public class StoryApplicationService {
     }
 
     private Map<String, Object> normalizeWordCount(CreateStoryRequest request) {
-        int minWords = request.wordCount() == null || request.wordCount().minWords() == null ? 1200 : Math.max(200, request.wordCount().minWords());
-        int targetWords = request.wordCount() == null || request.wordCount().targetWords() == null ? 1800 : Math.max(minWords, request.wordCount().targetWords());
-        int maxWords = request.wordCount() == null || request.wordCount().maxWords() == null ? 2600 : Math.max(targetWords, request.wordCount().maxWords());
+        int minWords = request.wordCount() == null || request.wordCount().minWords() == null ? 2000 : Math.max(2000, request.wordCount().minWords());
+        int targetWords = request.wordCount() == null || request.wordCount().targetWords() == null ? 2500 : Math.max(minWords, request.wordCount().targetWords());
         Map<String, Object> wordCount = new LinkedHashMap<>();
         wordCount.put("minWords", minWords);
         wordCount.put("targetWords", targetWords);
-        wordCount.put("maxWords", maxWords);
         return wordCount;
     }
 

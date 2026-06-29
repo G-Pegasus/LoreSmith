@@ -85,7 +85,9 @@ def parse_world_rule(data: dict[str, Any]) -> WorldRule:
 def parse_chapter_plan(data: dict[str, Any]) -> ChapterPlan:
     contract_data = data.get("contract") or {}
     contract = ChapterContract(
+        chapter_direction=str(contract_data.get("chapter_direction", "") or ""),
         required_beats=[str(x) for x in (contract_data.get("required_beats") or [])],
+        avoid=[str(x) for x in (contract_data.get("avoid") or [])],
         forbidden_moves=[str(x) for x in (contract_data.get("forbidden_moves") or [])],
         continuity_checks=[str(x) for x in (contract_data.get("continuity_checks") or [])],
         evaluation_focus=[str(x) for x in (contract_data.get("evaluation_focus") or [])],

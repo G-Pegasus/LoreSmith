@@ -140,6 +140,9 @@ class OpenAICompatClient:
                         except Exception:
                             continue
                 return "".join(chunks).strip()
+            except urllib.error.HTTPError as exc:
+                detail = exc.read().decode("utf-8", errors="ignore")
+                raise RuntimeError(f"llm stream http error {exc.code}: {detail}") from exc
             except Exception as exc:
                 last_error = exc
                 if attempt == 0:

@@ -12,7 +12,6 @@ import {
   fetchStoryWorkspaceReference,
   saveWorkspaceNode,
   startWorkspaceRun,
-  updateWorkspaceReference,
   updateWorkspaceRunBridgeSeq,
 } from '../lib/api/workspace'
 import type { Run, StoryWorkspace, WorkspaceNodeType, WorkspaceReference } from '../lib/types/api'
@@ -27,7 +26,6 @@ export function StoryWorkspacePage() {
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [streamingAssistantText, setStreamingAssistantText] = useState('')
   const [streamingRunText, setStreamingRunText] = useState('')
-  const [rightPanelTab, setRightPanelTab] = useState<'assistant' | 'reference'>('reference')
   const [mode, setMode] = useState<'run' | 'workspace'>('run')
   const [referenceDraft, setReferenceDraft] = useState<WorkspaceReference>({
     premise: '',
@@ -106,23 +104,6 @@ export function StoryWorkspacePage() {
       queryClient.setQueryData(['story-workspace', storyId], nextWorkspace)
       setSelectedNodeId(nextWorkspace.activeNodeId)
       setDraftContent(nextWorkspace.activeNodeId ? nextWorkspace.contentByNodeId[nextWorkspace.activeNodeId] ?? '' : '')
-    },
-  })
-
-  const saveReferenceMutation = useMutation({
-    mutationFn: async (reference: WorkspaceReference) => updateWorkspaceReference(storyId, reference),
-    onSuccess: (nextReference) => {
-      queryClient.setQueryData(['story-workspace-reference', storyId, workspaceQuery.data?.updatedAt], nextReference)
-      setReferenceDraft(nextReference)
-      void queryClient.invalidateQueries({ queryKey: ['story-workspace', storyId] })
-    },
-  })
-
-  const refreshReferenceMutation = useMutation({
-    mutationFn: async () => fetchStoryWorkspaceReference(storyId, workspaceQuery.data),
-    onSuccess: (nextReference) => {
-      queryClient.setQueryData(['story-workspace-reference', storyId, workspaceQuery.data?.updatedAt], nextReference)
-      setReferenceDraft(nextReference)
     },
   })
 
@@ -319,7 +300,6 @@ export function StoryWorkspacePage() {
             setIsFollowingRun(false)
           } else {
             setMode('workspace')
-            setRightPanelTab('assistant')
           }
         }}
         onCreateNode={(parentId, type) => {
@@ -359,11 +339,8 @@ export function StoryWorkspacePage() {
       <WorkspaceAssistantPanel
         mode={mode}
         workspace={workspace}
-        reference={referenceDraft}
         selectedNodeId={selectedNodeId}
-        tab={rightPanelTab}
-        onTabChange={setRightPanelTab}
-        isPending={assistantMutation.isPending || saveReferenceMutation.isPending || refreshReferenceMutation.isPending || runMutation.isPending || continueMutation.isPending}
+        isPending={assistantMutation.isPending || runMutation.isPending || continueMutation.isPending}
         streamingText={streamingAssistantText}
         streamingRunText={streamingRunText}
         awaitingConfirmation={runState?.awaitingConfirmation ?? null}
@@ -374,10 +351,12 @@ export function StoryWorkspacePage() {
           await assistantMutation.mutateAsync({ workspace, instruction })
         }}
         onContinueRun={async () => {
-          if (workspace.runBridge?.activeRunId) {
+          const shouldResumeRun = Boolean(
+            workspace.runBridge?.activeRunId && (runState?.awaitingConfirmation || runState?.status === 'idle'),
+          )
+          if (workspace.runBridge?.activeRunId && shouldResumeRun) {
             setMode('run')
             setIsFollowingRun(true)
-            setRightPanelTab('reference')
             setIsContinuingRun(true)
             setStreamingRunText('')
             if (runState?.awaitingConfirmation) {
@@ -387,15 +366,10 @@ export function StoryWorkspacePage() {
             }
           } else {
             setIsFollowingRun(true)
+            setMode('run')
             setStreamingRunText('')
             await runMutation.mutateAsync(referenceDraft.premise || workspace.premise)
           }
-        }}
-        onSaveReference={async () => {
-          await saveReferenceMutation.mutateAsync(referenceDraft)
-        }}
-        onRefreshReference={async () => {
-          await refreshReferenceMutation.mutateAsync()
         }}
       />
     </section>

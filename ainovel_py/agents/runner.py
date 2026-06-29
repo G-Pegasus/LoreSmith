@@ -204,23 +204,44 @@ class LLMCoordinatorBackend:
             for item in (context.get("rewrite_issues") or [])
             if isinstance(item, dict)
         ]
+        core_event = str(outline.get("core_event", "") or "推进主线冲突").strip()
+        hook = str(outline.get("hook", "") or "让局面出现新的不确定性").strip()
+        previous_landing = ""
+        if recent_summaries:
+            latest_summary = recent_summaries[-1]
+            if isinstance(latest_summary, dict):
+                previous_landing = str(latest_summary.get("emotional_landing", "") or "").strip()
+        payoff_hint = summary_focus[-1] if summary_focus else ""
+        direction_parts = [f"本章围绕“{core_event}”展开"]
+        if payoff_hint:
+            direction_parts.append(f"承接前文余波：{payoff_hint[:80]}")
+        direction_parts.append(f"结尾把读者推向“{hook}”")
+        chapter_direction = "；".join(direction_parts) + "。"
+        emotion_target = "让读者先感到角色被局面逼近，再在细节变化里意识到问题变得更棘手。"
+        if previous_landing:
+            emotion_target = f"承接上一章“{previous_landing}”的余韵，" + emotion_target
         meta = self.store.run_meta.load()
         min_words_default = meta.min_words if meta else 1200
         target_words_default = meta.target_words if meta else 1800
         max_words_default = meta.max_words if meta else 2600
+        avoid = ["不要提前完结主线", "不要无铺垫引入重大设定变更"]
+        if rewrite_reason:
+            avoid = [rewrite_reason[:80], avoid[0]]
+        elif rewrite_issues:
+            avoid = [x[:80] for x in rewrite_issues[:2]]
+        continuity_checks = review_focus[:2] + rewrite_issues[:1]
+        if character_names:
+            continuity_checks.append("沿用已有人物姓名和称谓，不要创造同位替身角色")
         contract = {
-            "required_beats": [
-                str(outline.get("core_event", "") or "推进主线"),
-                "角色决策造成后续影响",
-                str(outline.get("hook", "") or "章末制造明确悬念"),
-            ],
-            "forbidden_moves": ["提前完结主线", "无铺垫引入重大设定变更"],
-            "continuity_checks": (review_focus or ["延续前文章节因果", "角色称谓与状态一致"])
-            + (["严格使用用户提供的人物名称，不要擅自替换主角或创造同位角色"] if character_names else []),
-            "evaluation_focus": ["节奏递进", "冲突兑现", "章末钩子有效"] + review_focus[:2] + rewrite_issues[:2],
-            "emotion_target": "紧张推进并在章末提升期待",
-            "payoff_points": summary_focus[:2],
-            "hook_goal": str(outline.get("hook", "") or "形成强追读欲望"),
+            "chapter_direction": chapter_direction,
+            "required_beats": [],
+            "avoid": avoid[:2],
+            "forbidden_moves": avoid[:2],
+            "continuity_checks": continuity_checks[:3],
+            "evaluation_focus": [],
+            "emotion_target": emotion_target,
+            "payoff_points": summary_focus[-1:],
+            "hook_goal": hook,
             "min_words": min_words_default,
             "target_words": target_words_default,
             "max_words": max_words_default,
@@ -228,10 +249,10 @@ class LLMCoordinatorBackend:
         base_plan = {
             "chapter": chapter,
             "title": str(outline.get("title", "") or f"第{chapter}章"),
-            "goal": str(outline.get("core_event", "") or "推进主线冲突并制造新的局面"),
-            "conflict": str(outline.get("core_event", "") or "角色在压力中做出高代价选择"),
-            "hook": str(outline.get("hook", "") or "章末引出更大问题"),
-            "emotion_arc": "承压 -> 升级 -> 反转/悬念",
+            "goal": core_event,
+            "conflict": core_event or "角色在压力中做出高代价选择",
+            "hook": hook,
+            "emotion_arc": emotion_target,
             "notes": f"seed={seed_text[:80]} | rewrite_reason={rewrite_reason[:120]}",
             "contract": contract,
         }
@@ -259,7 +280,8 @@ class LLMCoordinatorBackend:
             system_prompt = "你是小说章节规划助手，只输出 JSON。请基于既有章节上下文和用户反馈，返回修订后的本章计划。"
             prompt = (
                 f"请修订第{chapter}章计划，严格输出 JSON 对象，字段必须包含：chapter,title,goal,conflict,hook,emotion_arc,notes,contract。"
-                f"contract 内字段：required_beats,forbidden_moves,continuity_checks,evaluation_focus,emotion_target,payoff_points,hook_goal,min_words,target_words,max_words。\n\n"
+                f"contract 内字段：chapter_direction,avoid,continuity_checks,emotion_target,hook_goal,min_words,target_words,max_words。"
+                f"如需兼容可保留 required_beats/forbidden_moves/payoff_points，但不要把它们写成任务清单。\n\n"
                 f"[用户方向]\n{seed_text}\n\n"
                 f"[用户反馈]\n{feedback}\n\n"
                 f"[当前计划]\n{json.dumps(base_plan, ensure_ascii=False)}\n\n"
@@ -285,7 +307,9 @@ class LLMCoordinatorBackend:
             emotion_arc=str(data.get("emotion_arc", "") or ""),
             notes=str(data.get("notes", "") or ""),
             contract=ChapterContract(
+                chapter_direction=str(contract_data.get("chapter_direction", "") or ""),
                 required_beats=[str(x) for x in (contract_data.get("required_beats") or [])],
+                avoid=[str(x) for x in (contract_data.get("avoid") or [])],
                 forbidden_moves=[str(x) for x in (contract_data.get("forbidden_moves") or [])],
                 continuity_checks=[str(x) for x in (contract_data.get("continuity_checks") or [])],
                 evaluation_focus=[str(x) for x in (contract_data.get("evaluation_focus") or [])],
@@ -315,94 +339,123 @@ class LLMCoordinatorBackend:
         target_words = int(contract.get("target_words", 1800) or 1800)
         max_words = int(contract.get("max_words", 2600) or 2600)
         pack = self.context_manager.build_writer_pack(context)
-        recent = "\n".join(
-            f"- 第{item.get('chapter')}: {item.get('summary', '')}" for item in (context.get("recent_summaries") or []) if isinstance(item, dict)
-        )
-        review_focus = "\n".join(
-            f"- {item.get('description', '')}" for item in ((context.get("latest_review") or {}).get("issues") or []) if isinstance(item, dict)
-        )
         rewrite_focus = "\n".join(
             f"- {item.get('description', '')}" for item in (context.get("rewrite_issues") or []) if isinstance(item, dict)
         )
-        foreshadow = "\n".join(
-            f"- {item.get('id', '')}: {item.get('description', '')}" for item in (context.get("foreshadow_ledger") or [])[:6] if isinstance(item, dict)
+        premise = str(context.get("premise", "") or seed_text).strip()
+        chapter_direction = str(contract.get("chapter_direction", "") or "").strip()
+        if not chapter_direction:
+            chapter_direction = (
+                f"本章从“{plan.get('goal', '') or '当前冲突'}”进入，围绕“{plan.get('conflict', '') or '压力升级'}”展开，"
+                f"结尾留下“{plan.get('hook', '') or '新的不确定性'}”。"
+            )
+        emotion_target = str(contract.get("emotion_target", "") or plan.get("emotion_arc", "") or "在推进中保留情绪余韵").strip()
+        recent_summaries = [item for item in (context.get("recent_summaries") or []) if isinstance(item, dict)]
+        previous = recent_summaries[-1] if recent_summaries else {}
+        previous_landing = str(previous.get("emotional_landing", "") or "").strip()
+        if not previous_landing and previous:
+            previous_landing = str(previous.get("summary", "") or "").strip()[:100]
+        snapshots = [
+            item for item in (context.get("character_snapshots") or [])
+            if isinstance(item, dict) and str(item.get("name", "") or "").strip()
+        ][:6]
+        if snapshots:
+            character_lines = "\n".join(
+                f"- {item.get('name', '')}: 状态={item.get('status', '')}；动机={item.get('motivation', '')}；关系={item.get('relations', '')}"
+                for item in snapshots
+            )
+        else:
+            character_lines = "\n".join(
+                f"- {item.get('name', '')} / {item.get('role', '')}: {item.get('description', '')}"
+                for item in (context.get("characters") or [])[:6] if isinstance(item, dict)
+            )
+        relevance_text = " ".join(
+            str(x)
+            for x in [
+                chapter_direction,
+                plan.get("goal", ""),
+                plan.get("conflict", ""),
+                plan.get("hook", ""),
+                emotion_target,
+            ]
         )
-        character_lines = "\n".join(
-            f"- {item.get('name', '')} / {item.get('role', '')}: {item.get('description', '')}" for item in (context.get("characters") or [])[:8] if isinstance(item, dict)
+        foreshadow_items = []
+        for item in (context.get("foreshadow_ledger") or []):
+            if not isinstance(item, dict):
+                continue
+            desc = str(item.get("description", "") or "")
+            fid = str(item.get("id", "") or "")
+            if not desc:
+                continue
+            if fid and fid in relevance_text or any(token and token in relevance_text for token in desc.split()[:3]):
+                foreshadow_items.append(item)
+        if not foreshadow_items:
+            foreshadow_items = [item for item in (context.get("foreshadow_ledger") or []) if isinstance(item, dict)][:3]
+        foreshadow = "\n".join(
+            f"- {item.get('id', '')}: {item.get('description', '')}" for item in foreshadow_items[:3]
         )
         world_rule_lines = "\n".join(
             f"- {item.get('category', '')}: {item.get('rule', '')} {item.get('boundary', '')}".strip()
-            for item in (context.get("world_rules") or [])[:8] if isinstance(item, dict)
+            for item in (context.get("world_rules") or [])[:3] if isinstance(item, dict)
         )
-        continuity = "\n".join(f"- {x}" for x in (contract.get("continuity_checks") or []))
-        required_beats = "\n".join(f"- {x}" for x in (contract.get("required_beats") or []))
-        forbidden = "\n".join(f"- {x}" for x in (contract.get("forbidden_moves") or []))
-        payoff = "\n".join(f"- {x}" for x in (contract.get("payoff_points") or []))
+        continuity_items = [str(x) for x in (contract.get("continuity_checks") or []) if str(x).strip()][:3]
+        continuity = "\n".join(f"- {x}" for x in continuity_items)
+        avoid_items = [str(x) for x in (contract.get("avoid") or contract.get("forbidden_moves") or []) if str(x).strip()][:2]
+        forbidden = "\n".join(f"- {x}" for x in avoid_items)
         style_rules = context.get("style_rules") or {}
-        prose_rules = "\n".join(f"- {x}" for x in (style_rules.get("prose") or []))
+        prose_candidates = [str(x) for x in (style_rules.get("prose") or []) if str(x).strip()]
+        if not prose_candidates:
+            style_text = str(context.get("style_reference", "") or self.assets.styles.get("default", "") or "")
+            prose_candidates = [
+                line.strip("- ").strip()
+                for line in style_text.splitlines()
+                if line.strip() and not line.strip().startswith("#")
+            ]
+        prose_rules = "\n".join(f"- {x}" for x in prose_candidates[:3])
 
-        system_prompt = self.assets.prompts.get("writer") or (
+        writer_identity = self.assets.prompts.get("writer") or (
             "你是长篇网文写作助手。输出完整章节正文，不要解释，不要分点，不要写提示语。"
             "必须写出具有场景推进、人物决策、冲突升级和章末钩子的小说章节。"
         )
+        system_prompt = f"""
+{writer_identity}
+
+[创作简报]
+故事前提：{premise[:240] or '从当前故事上下文自然承接。'}
+当前章节方向：{chapter_direction}
+前文情绪余韵：{previous_landing or '无明确上一章余韵时，从当前场景压力进入。'}
+本章核心体验：{emotion_target}
+""".strip()
         user_prompt = f"""
-基于以下信息创作第{chapter}章正文。
+请直接创作第{chapter}章正文。以下参考按优先级从高到低使用。
 
-[用户方向]
-{seed_text}
+[写作参考]
+关键人物当前状态：
+{character_lines or '- 以已出现人物为准，先写状态变化，再写事件推进。'}
 
-{pack.summary_block or ''}
+活跃伏笔：
+{foreshadow or '- 本章不强行调用无关伏笔。'}
 
-[本章计划]
-标题：{plan.get('title', '')}
-目标：{plan.get('goal', '')}
-冲突：{plan.get('conflict', '')}
-钩子：{plan.get('hook', '')}
-情绪曲线：{plan.get('emotion_arc', '')}
+世界边界：
+{world_rule_lines or '- 遵守既有设定，不额外解释设定。'}
 
-[必须完成]
-{required_beats or '- 推进主线'}
+风格参考：
+{prose_rules or '- 快慢交替；用具体动作和感官细节承载情绪；对白保留潜台词。'}
 
-[禁止事项]
-{forbidden or '- 不要提前完结主线'}
-
-[连续性检查]
-{continuity or '- 角色状态前后一致'}
-
-[近期摘要]
-{recent or '- 无'}
-
-[最近评审关注]
-{review_focus or '- 无'}
+{pack.restore_block or ''}
 
 [本轮重写/打磨重点]
 {rewrite_focus or '- 无'}
 
-[主要人物]
-{character_lines or '- 无'}
-
-[世界规则]
-{world_rule_lines or '- 无'}
-
-[活跃伏笔]
-{foreshadow or '- 无'}
-
-[待兑现点]
-{payoff or '- 无'}
-
-[风格规则]
-{prose_rules or '- 节奏紧凑，因果清晰，章末留钩子'}
-
-{pack.restore_block or ''}
-
-要求：
+[技术约束]
 1. 用中文小说正文直接写作。
 2. 只输出正文内容，不要输出章节标题、`第X章` 标题头、小标题、说明语或任何非正文包装。
 3. 目标长度 {target_words} 字左右，最低不少于 {min_words} 字，最高不超过 {max_words} 字。
-4. 章节内必须有明确场景推进，不要只是摘要式概述。
-5. 章节要吸收最近评审提醒，避免重复问题。
-6. 如果已提供人物名单，优先使用这些人物，名字必须保持一致，不要私自替换主角或额外创造同位角色。
-7. 结尾必须形成强悬念或明确追读欲望。
+4. 连续性硬约束：
+{continuity or '- 角色姓名、称谓、状态与前文保持一致。'}
+5. 避坑提醒：
+{forbidden or '- 不要提前完结主线；不要无铺垫引入重大设定变更。'}
+6. 避免 AI 腔：不要写“他不禁”“一股力量涌上心头”“仿佛……一般”，不要用排比三连和段末总结句替代真实场景。
 """.strip()
         draft_chunks: list[str] = []
         stream_timeout = client.effective_stream_total_timeout()
@@ -499,6 +552,9 @@ def _run_write_commit_cycle(
             "state_changes": metadata.get("state_changes") or [],
             "hook_type": metadata.get("hook_type") or "mystery",
             "dominant_strand": metadata.get("dominant_strand") or "quest",
+            "emotional_landing": metadata.get("emotional_landing") or "",
+            "narrative_tone": metadata.get("narrative_tone") or "",
+            "sensory_anchor": metadata.get("sensory_anchor") or "",
         },
     )
     return draft_res, commit_res
@@ -519,6 +575,9 @@ def _extract_commit_metadata(client: OpenAICompatClient, chapter: int, draft: st
 - state_changes: 对象数组，每项 {{"entity": 字符串, "field": 字符串, "old_value": 字符串, "new_value": 字符串, "reason": 字符串, "chapter": 数字}}
 - hook_type: 字符串
 - dominant_strand: 字符串
+- emotional_landing: 字符串，本章结束时读者停留的情绪落点，例如“紧张中带着困惑”
+- narrative_tone: 字符串，本章主导叙事语调，例如“压抑、克制、暗流涌动”
+- sensory_anchor: 字符串，本章最有记忆感的一个感官细节，例如“雨水顺着门缝渗进来”
 
 如果某项不存在请返回空数组，不要伪造空对象。
 
@@ -545,7 +604,13 @@ def _extract_commit_metadata(client: OpenAICompatClient, chapter: int, draft: st
             "state_changes": [],
             "hook_type": "mystery",
             "dominant_strand": "quest",
+            "emotional_landing": "",
+            "narrative_tone": "",
+            "sensory_anchor": "",
         }
+    data.setdefault("emotional_landing", "")
+    data.setdefault("narrative_tone", "")
+    data.setdefault("sensory_anchor", "")
     data["chapter"] = chapter
     return data
 
@@ -558,10 +623,13 @@ def _generate_review_payload(client: OpenAICompatClient, runner: AgentRunner, ch
 请以小说编辑身份审阅第{chapter}章，并严格输出 JSON 对象，字段包括：
 chapter, scope, dimensions, issues, contract_status, contract_misses, contract_notes, verdict, summary, affected_chapters。
 其中：
-- dimensions 必须包含 consistency, character, pacing, continuity, foreshadow, hook, aesthetic 七个维度；
+- dimensions 必须包含 consistency, continuity, voice, emotional_impact, rhythm_variety, surprise, restraint 七个维度；
 - 每个维度包含 dimension, score(0-100), verdict(pass/warning/fail), comment；
 - issues 每项包含 type, severity, description, evidence, suggestion；
 - verdict 只能是 accept/polish/rewrite。
+- consistency/continuity 是硬门槛：只有明显设定或因果错误才给 fail，普通瑕疵不要用它触发重写；
+- polish/rewrite 应主要由 voice/emotional_impact/rhythm_variety/surprise/restraint 的审美维度不达标触发；
+- 不要把“没有严格履约”当作主要问题，优先评价读起来是否有声音、有情绪、有节奏、有留白。
 
 [章节正文]
 {draft}
@@ -579,20 +647,20 @@ chapter, scope, dimensions, issues, contract_status, contract_misses, contract_n
             "scope": "chapter",
             "dimensions": [
                 {"dimension": "consistency", "score": 85, "verdict": "pass", "comment": "设定一致"},
-                {"dimension": "character", "score": 82, "verdict": "pass", "comment": "角色动机成立"},
-                {"dimension": "pacing", "score": 78, "verdict": "warning", "comment": "中段可压缩"},
                 {"dimension": "continuity", "score": 86, "verdict": "pass", "comment": "连续性良好"},
-                {"dimension": "foreshadow", "score": 80, "verdict": "pass", "comment": "伏笔明确"},
-                {"dimension": "hook", "score": 83, "verdict": "pass", "comment": "钩子有效"},
-                {"dimension": "aesthetic", "score": 81, "verdict": "pass", "comment": "语言风格稳定"},
+                {"dimension": "voice", "score": 81, "verdict": "pass", "comment": "语言声音稳定"},
+                {"dimension": "emotional_impact", "score": 82, "verdict": "pass", "comment": "情绪能落到场景里"},
+                {"dimension": "rhythm_variety", "score": 78, "verdict": "warning", "comment": "局部节奏可再拉开"},
+                {"dimension": "surprise", "score": 80, "verdict": "pass", "comment": "有合理的意外推进"},
+                {"dimension": "restraint", "score": 81, "verdict": "pass", "comment": "说明较克制"},
             ],
             "issues": [
                 {
-                    "type": "pacing",
+                    "type": "rhythm_variety",
                     "severity": "warning",
-                    "description": "中段说明略长",
+                    "description": "中段节奏略平",
                     "evidence": "第二段连续解释较多",
-                    "suggestion": "压缩背景说明",
+                    "suggestion": "用动作和对白替代部分说明",
                 }
             ],
             "contract_status": "met",

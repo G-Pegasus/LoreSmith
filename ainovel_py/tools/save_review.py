@@ -11,15 +11,16 @@ from ainovel_py.tools.parsers import parse_review_entry
 
 _EXPECTED_DIMENSIONS = {
     "consistency",
-    "character",
-    "pacing",
     "continuity",
-    "foreshadow",
-    "hook",
-    "aesthetic",
+    "voice",
+    "emotional_impact",
+    "rhythm_variety",
+    "surprise",
+    "restraint",
 }
 
-_CRITICAL_DIMENSIONS = {"consistency", "character", "continuity"}
+_CRITICAL_DIMENSIONS = {"consistency", "continuity"}
+_AESTHETIC_DIMENSIONS = {"voice", "emotional_impact", "rhythm_variety", "surprise", "restraint"}
 
 
 class SaveReviewTool:
@@ -43,17 +44,10 @@ class SaveReviewTool:
         final_verdict = review.verdict
         escalation_reason = ""
         if review.verdict == "accept":
-            if review.contract_status == "missed":
-                final_verdict = "rewrite"
-                escalation_reason = "合同履约状态为 missed，升级为重写"
-            elif review.contract_status == "partial":
-                final_verdict = "polish"
-                escalation_reason = "合同履约状态为 partial，升级为打磨"
-            if final_verdict == "accept":
-                gate = self._evaluate_scorecard_gate(review)
-                if gate:
-                    final_verdict = "rewrite" if gate.startswith("rewrite:") else "polish"
-                    escalation_reason = gate
+            gate = self._evaluate_scorecard_gate(review)
+            if gate:
+                final_verdict = "rewrite" if gate.startswith("rewrite:") else "polish"
+                escalation_reason = gate
 
         hints: list[str] = []
         hints.extend(normalization_hints)
@@ -148,8 +142,8 @@ class SaveReviewTool:
                 raise ValueError(
                     f"dimension {dim.dimension} has inconsistent score/verdict: score={dim.score} verdict={dim.verdict}"
                 )
-            if dim.dimension == "aesthetic" and not dim.comment.strip():
-                raise ValueError("aesthetic comment is required")
+            if dim.dimension in _AESTHETIC_DIMENSIONS and not dim.comment.strip():
+                raise ValueError(f"{dim.dimension} comment is required")
 
     @staticmethod
     def _expected_dimension_verdict(score: int) -> str:
@@ -166,10 +160,12 @@ class SaveReviewTool:
             is_critical = dim.dimension in _CRITICAL_DIMENSIONS
             if is_critical and (dim.verdict == "fail" or dim.score < 60):
                 critical_fails.append(f"{dim.dimension}({dim.score})")
-            elif dim.verdict == "warning" or (is_critical and dim.score < 80):
+            elif dim.dimension in _AESTHETIC_DIMENSIONS and dim.verdict == "fail":
+                critical_fails.append(f"{dim.dimension}({dim.score})")
+            elif dim.dimension in _AESTHETIC_DIMENSIONS and dim.verdict in {"warning", "fail"}:
                 polish_issues.append(f"{dim.dimension}({dim.score})")
         if critical_fails:
             return f"rewrite: 关键维度不合格 {critical_fails}"
         if polish_issues:
-            return f"polish: 部分维度需打磨 {polish_issues}"
+            return f"polish: 审美维度需打磨 {polish_issues}"
         return ""

@@ -8,7 +8,7 @@ from ainovel_py.tools.save_review import SaveReviewTool
 
 
 def _dimensions() -> list[DimensionScore]:
-    names = ["consistency", "character", "pacing", "continuity", "foreshadow", "hook", "aesthetic"]
+    names = ["consistency", "continuity", "voice", "emotional_impact", "rhythm_variety", "surprise", "restraint"]
     return [DimensionScore(dimension=name, score=85, verdict="pass", comment="ok") for name in names]
 
 
@@ -48,12 +48,12 @@ def main() -> int:
             ],
             "dimensions": [
                 {"dimension": "consistency", "score": 82, "verdict": "pass", "comment": "ok"},
-                {"dimension": "character", "score": 80, "verdict": "pass", "comment": "ok"},
-                {"dimension": "pacing", "score": 72, "verdict": "warning", "comment": "ok"},
                 {"dimension": "continuity", "score": 75, "verdict": "warning", "comment": "ok"},
-                {"dimension": "foreshadow", "score": 82, "verdict": "pass", "comment": "ok"},
-                {"dimension": "hook", "score": 83, "verdict": "pass", "comment": "ok"},
-                {"dimension": "aesthetic", "score": 81, "verdict": "pass", "comment": "ok"},
+                {"dimension": "voice", "score": 82, "verdict": "pass", "comment": "ok"},
+                {"dimension": "emotional_impact", "score": 83, "verdict": "pass", "comment": "ok"},
+                {"dimension": "rhythm_variety", "score": 81, "verdict": "pass", "comment": "ok"},
+                {"dimension": "surprise", "score": 84, "verdict": "pass", "comment": "ok"},
+                {"dimension": "restraint", "score": 85, "verdict": "pass", "comment": "ok"},
             ],
             "contract_status": "met",
             "contract_misses": [],

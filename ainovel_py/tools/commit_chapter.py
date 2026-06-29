@@ -89,6 +89,9 @@ class CommitChapterTool:
             summary=summary_text,
             characters=[str(x) for x in (args.get("characters") or [])],
             key_events=[str(x) for x in (args.get("key_events") or [])],
+            emotional_landing=str(args.get("emotional_landing", "") or ""),
+            narrative_tone=str(args.get("narrative_tone", "") or ""),
+            sensory_anchor=str(args.get("sensory_anchor", "") or ""),
         )
         self.store.summaries.save_summary(summary)
 

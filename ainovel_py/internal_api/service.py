@@ -6,6 +6,7 @@ from typing import Optional
 
 from ainovel_py.bootstrap.config import Config, ProviderConfig
 from ainovel_py.bootstrap.configfile import load_config
+from ainovel_py.domain.review import ForeshadowEntry
 from ainovel_py.domain.story import Character
 from ainovel_py.domain.writing import PendingRunCheckpoint
 from ainovel_py.host.host import Host
@@ -14,6 +15,7 @@ from ainovel_py.internal_api.dto import CreateRunRequest, InstructionRequest, Re
 from ainovel_py.internal_api.errors import ApiError
 from ainovel_py.internal_api.registry import RunRegistry, RunSession
 from ainovel_py.internal_api.tasks import RunTask
+from ainovel_py.tools.parsers import parse_outline_entry, parse_relationship_entry, parse_timeline_event, parse_world_rule
 
 
 class RunService:
@@ -213,7 +215,7 @@ class RunService:
                 provider=provider,
                 model=model,
                 providers={provider: ProviderConfig(api_key="dummy-key")},
-                style=req.story.style or "default",
+                style="default",
                 context_window=req.execution.context_window or 128000,
             )
         cfg.output_dir = self._resolve_output_dir(req)
@@ -221,8 +223,6 @@ class RunService:
             cfg.provider = req.execution.provider
         if req.execution.model:
             cfg.model = req.execution.model
-        if req.story.style:
-            cfg.style = req.story.style
         if req.execution.context_window > 0:
             cfg.context_window = req.execution.context_window
         cfg.fill_defaults()
@@ -307,10 +307,12 @@ class RunService:
             if foreshadow_entries:
                 host.store.world.save_foreshadow_ledger(foreshadow_entries)
         word_count = req.story.word_count
+        min_words = max(2000, int(word_count.min_words or 2000))
+        target_words = max(min_words, int(word_count.target_words or 2500))
         host.store.run_meta.set_story_defaults(
             title=(req.story.title or "").strip(),
             genre=(req.story.genre or "").strip(),
-            min_words=max(200, int(word_count.min_words or 1200)),
-            target_words=max(200, int(word_count.target_words or 1800)),
-            max_words=max(200, int(word_count.max_words or 2600)),
+            min_words=min_words,
+            target_words=target_words,
+            max_words=target_words,
         )

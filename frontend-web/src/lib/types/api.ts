@@ -13,7 +13,7 @@ export type StoryCharacter = {
 export type StoryWordCount = {
   minWords: number
   targetWords: number
-  maxWords: number
+  maxWords?: number
 }
 
 export type Story = {
@@ -37,10 +37,8 @@ export type CreateStoryRequest = {
   runId: string
   title: string
   premise: string
-  genre?: string
-  style?: string
   characters?: StoryCharacter[]
-  wordCount?: StoryWordCount
+  wordCount?: Omit<StoryWordCount, 'maxWords'>
   prompt: string
   provider?: string
   model?: string
@@ -53,6 +51,20 @@ export type CreateStoryResponse = {
   runId: string
   status: string
   kernelStatus: string
+}
+
+export type InspirationMessage = {
+  messageId: string
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  createdAt: string
+}
+
+export type InspirationSession = {
+  sessionId: string
+  memorySummary: string
+  messages: InspirationMessage[]
+  updatedAt: string
 }
 
 export type AwaitingConfirmation = {

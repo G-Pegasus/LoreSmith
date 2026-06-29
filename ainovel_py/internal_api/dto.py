@@ -12,17 +12,19 @@ class StoryCharacterSpec(BaseModel):
 
 
 class StoryWordCountSpec(BaseModel):
-    min_words: int = 1200
-    target_words: int = 1800
-    max_words: int = 2600
+    model_config = ConfigDict(extra="forbid")
+
+    min_words: int = 2000
+    target_words: int = 2500
 
 
 class StorySpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     story_id: str = ""
     title: str = ""
     premise: str = ""
     genre: str = ""
-    style: str = ""
     language: str = "zh-CN"
     characters: list[StoryCharacterSpec] = Field(default_factory=list)
     word_count: StoryWordCountSpec = Field(default_factory=StoryWordCountSpec)

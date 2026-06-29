@@ -64,10 +64,9 @@ export type PythonCreateRunRequest = {
     title: string
     premise: string
     genre?: string
-    style?: string
     language?: string
     characters?: Array<{ name: string; role?: string | null; description?: string | null }>
-    word_count?: { min_words: number; target_words: number; max_words: number }
+    word_count?: { min_words: number; target_words: number }
   }
   execution: {
     provider?: string

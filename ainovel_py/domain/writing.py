@@ -5,7 +5,9 @@ from dataclasses import dataclass, field
 
 @dataclass
 class ChapterContract:
+    chapter_direction: str = ""
     required_beats: list[str] = field(default_factory=list)
+    avoid: list[str] = field(default_factory=list)
     forbidden_moves: list[str] = field(default_factory=list)
     continuity_checks: list[str] = field(default_factory=list)
     evaluation_focus: list[str] = field(default_factory=list)
@@ -43,6 +45,9 @@ class ChapterSummary:
     summary: str
     characters: list[str] = field(default_factory=list)
     key_events: list[str] = field(default_factory=list)
+    emotional_landing: str = ""
+    narrative_tone: str = ""
+    sensory_anchor: str = ""
 
 
 @dataclass

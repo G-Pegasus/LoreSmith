@@ -16,34 +16,13 @@ type CharacterDraft = {
   description: string
 }
 
-const genres = [
-  { value: 'fantasy', label: '奇幻' },
-  { value: 'scifi', label: '科幻' },
-  { value: 'romance', label: '言情' },
-  { value: 'mystery', label: '悬疑' },
-  { value: 'historical', label: '历史' },
-  { value: 'urban', label: '都市' },
-]
-
-const styles = [
-  { value: 'literary', label: '文学性' },
-  { value: 'light', label: '轻松' },
-  { value: 'dramatic', label: '戏剧化' },
-  { value: 'poetic', label: '诗意' },
-]
-
 export function StoryCreateForm({ onSubmit, isSubmitting, onTitleChange, onPromptChange }: StoryCreateFormProps) {
   const [title, setTitle] = useState('')
-  const [genre, setGenre] = useState('')
-  const [style, setStyle] = useState('')
-  const [genreOpen, setGenreOpen] = useState(false)
-  const [styleOpen, setStyleOpen] = useState(false)
   const [worldSetting, setWorldSetting] = useState('')
   const [synopsis, setSynopsis] = useState('写一部充满悬念与情绪张力的长篇小说，从第一章开始创作。')
   const [characters, setCharacters] = useState<CharacterDraft[]>([])
-  const [minWords, setMinWords] = useState(1200)
-  const [targetWords, setTargetWords] = useState(1800)
-  const [maxWords, setMaxWords] = useState(2600)
+  const [minWords, setMinWords] = useState(2000)
+  const [targetWords, setTargetWords] = useState(2500)
 
   const ids = useMemo(
     () => ({
@@ -79,8 +58,6 @@ export function StoryCreateForm({ onSubmit, isSubmitting, onTitleChange, onPromp
           runId: ids.runId,
           title,
           premise: worldSetting,
-          genre,
-          style,
           characters: characters
             .map((character) => ({
               name: character.name.trim(),
@@ -89,9 +66,8 @@ export function StoryCreateForm({ onSubmit, isSubmitting, onTitleChange, onPromp
             }))
             .filter((character) => character.name),
           wordCount: {
-            minWords: Math.max(200, minWords),
-            targetWords: Math.max(Math.max(200, minWords), targetWords),
-            maxWords: Math.max(Math.max(200, minWords, targetWords), maxWords),
+            minWords: Math.max(2000, minWords),
+            targetWords: Math.max(Math.max(2000, minWords), targetWords),
           },
           prompt: synopsis,
           configPath: 'dev_config.json',
@@ -111,74 +87,6 @@ export function StoryCreateForm({ onSubmit, isSubmitting, onTitleChange, onPromp
           required
         />
       </label>
-
-      <div className='field-row'>
-        <div className='field'>
-          <span>题材</span>
-          <div className={`select-wrap ${genreOpen ? 'is-open' : ''}`}>
-            <button
-              className='select-button'
-              type='button'
-              onClick={() => {
-                setGenreOpen((current) => !current)
-                setStyleOpen(false)
-              }}
-            >
-              <span>{genres.find((item) => item.value === genre)?.label ?? '选择题材'}</span>
-            </button>
-            {genreOpen ? (
-              <div className='select-menu'>
-                {genres.map((item) => (
-                  <button
-                    key={item.value}
-                    className={`select-menu__item ${genre === item.value ? 'is-selected' : ''}`}
-                    type='button'
-                    onClick={() => {
-                      setGenre(item.value)
-                      setGenreOpen(false)
-                    }}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        </div>
-
-        <div className='field'>
-          <span>风格</span>
-          <div className={`select-wrap ${styleOpen ? 'is-open' : ''}`}>
-            <button
-              className='select-button'
-              type='button'
-              onClick={() => {
-                setStyleOpen((current) => !current)
-                setGenreOpen(false)
-              }}
-            >
-              <span>{styles.find((item) => item.value === style)?.label ?? '选择风格'}</span>
-            </button>
-            {styleOpen ? (
-              <div className='select-menu'>
-                {styles.map((item) => (
-                  <button
-                    key={item.value}
-                    className={`select-menu__item ${style === item.value ? 'is-selected' : ''}`}
-                    type='button'
-                    onClick={() => {
-                      setStyle(item.value)
-                      setStyleOpen(false)
-                    }}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </div>
 
       <label className='field'>
         <div className='field__label-group'>
@@ -240,17 +148,13 @@ export function StoryCreateForm({ onSubmit, isSubmitting, onTitleChange, onPromp
         <div className='field-row'>
           <label className='field'>
             <span>最少</span>
-            <input className='input input--compact' type='number' min={200} step={100} value={minWords} onChange={(event) => setMinWords(Number(event.target.value) || 200)} />
+            <input className='input input--compact' type='number' min={2000} step={100} value={minWords} onChange={(event) => setMinWords(Number(event.target.value) || 2000)} />
           </label>
           <label className='field'>
             <span>目标</span>
-            <input className='input input--compact' type='number' min={200} step={100} value={targetWords} onChange={(event) => setTargetWords(Number(event.target.value) || 200)} />
+            <input className='input input--compact' type='number' min={2000} step={100} value={targetWords} onChange={(event) => setTargetWords(Number(event.target.value) || 2500)} />
           </label>
         </div>
-        <label className='field'>
-          <span>最多</span>
-          <input className='input input--compact' type='number' min={200} step={100} value={maxWords} onChange={(event) => setMaxWords(Number(event.target.value) || 200)} />
-        </label>
       </div>
 
       <label className='field'>

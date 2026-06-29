@@ -10,7 +10,6 @@ public record CreateStoryRequest(
         @NotBlank String title,
         @NotBlank String premise,
         String genre,
-        String style,
         List<StoryCharacterRequest> characters,
         StoryWordCountRequest wordCount,
         @NotBlank String prompt,

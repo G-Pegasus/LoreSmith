@@ -300,12 +300,12 @@ class WorkspaceIntentServiceTest(unittest.TestCase):
                     ],
                     "dimensions": [
                         {"dimension": "consistency", "score": 85, "verdict": "pass", "comment": "ok"},
-                        {"dimension": "character", "score": 78, "verdict": "warning", "comment": "ok"},
-                        {"dimension": "pacing", "score": 82, "verdict": "pass", "comment": "ok"},
                         {"dimension": "continuity", "score": 81, "verdict": "pass", "comment": "ok"},
-                        {"dimension": "foreshadow", "score": 79, "verdict": "warning", "comment": "ok"},
-                        {"dimension": "hook", "score": 83, "verdict": "pass", "comment": "ok"},
-                        {"dimension": "aesthetic", "score": 88, "verdict": "pass", "comment": "ok"},
+                        {"dimension": "voice", "score": 82, "verdict": "pass", "comment": "ok"},
+                        {"dimension": "emotional_impact", "score": 83, "verdict": "pass", "comment": "ok"},
+                        {"dimension": "rhythm_variety", "score": 79, "verdict": "warning", "comment": "ok"},
+                        {"dimension": "surprise", "score": 83, "verdict": "pass", "comment": "ok"},
+                        {"dimension": "restraint", "score": 88, "verdict": "pass", "comment": "ok"},
                     ],
                 },
             )
