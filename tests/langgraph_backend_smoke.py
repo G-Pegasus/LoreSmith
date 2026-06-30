@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from ainovel_py.agents.build import build_coordinator_loop, build_tool_registry
 from ainovel_py.bootstrap.config import Config, ProviderConfig
+from ainovel_py.domain.writing import PendingRunCheckpoint
 from ainovel_py.store.store import Store
 
 
@@ -51,7 +52,18 @@ def main() -> int:
     if not isinstance(loop.backend, LangGraphRuntime):
         raise RuntimeError("langgraph backend not selected")
 
-    runtime = LangGraphRuntime(cfg_langgraph, loop.backend.runner, store, lambda event: None, lambda channel, delta: None)
+    pending_callbacks: list[PendingRunCheckpoint] = []
+    runtime = LangGraphRuntime(
+        cfg_langgraph,
+        loop.backend.runner,
+        store,
+        lambda event: None,
+        lambda channel, delta: None,
+        on_checkpoint_pending=pending_callbacks.append,
+    )
+    runtime.emit_checkpoint_pending(PendingRunCheckpoint(pause_after_chapter=5, next_chapter=6, completed_count=5))
+    if not pending_callbacks:
+        raise RuntimeError("checkpoint pending callback was not called")
     compiled = runtime._build_graph()
     if compiled is None:
         raise RuntimeError("langgraph graph did not compile")

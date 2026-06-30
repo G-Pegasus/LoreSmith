@@ -39,6 +39,7 @@ class Host:
             self.store,
             emit_event=self._emit_event,
             emit_stream=self._emit_stream_chunk,
+            on_checkpoint_pending=self.emit_checkpoint_pending,
         )
 
         self.events: asyncio.Queue[Event] = asyncio.Queue(maxsize=100)
@@ -184,6 +185,7 @@ class Host:
             self.store,
             emit_event=self._emit_event,
             emit_stream=self._emit_stream_chunk,
+            on_checkpoint_pending=self.emit_checkpoint_pending,
         )
         self._emit_event(Event(time=datetime.now(), category="SYSTEM", summary=f"模型已切换：{role or 'default'} -> {provider}/{model}", level="info"))
 

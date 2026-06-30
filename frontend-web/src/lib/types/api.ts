@@ -181,10 +181,14 @@ export type WorkspaceAssistantMessage = {
 }
 
 export type WorkspaceAssistantStreamResponse = {
-  storyId: string
-  messageId: string
+  storyId?: string
+  messageId?: string
   content: string
   fallbackUsed: boolean
+  result?: {
+    content?: string
+  }
+  fallback_used?: boolean
 }
 
 export type WorkspaceRunBridge = {

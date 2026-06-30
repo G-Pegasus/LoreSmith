@@ -1,14 +1,14 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Send } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
 import { useNavigate } from 'react-router-dom'
 import type { AwaitingConfirmation, StoryWorkspace } from '../../lib/types/api'
 
 type WorkspaceAssistantPanelProps = {
-  mode: 'run' | 'workspace'
   workspace: StoryWorkspace
   selectedNodeId: string | null
   isPending: boolean
   streamingText?: string
-  streamingRunText?: string
   awaitingConfirmation?: AwaitingConfirmation | null
   onSubmit: (instruction: string) => Promise<void>
   onContinueRun: () => Promise<void>
@@ -28,12 +28,10 @@ function WorkspaceStatusSection({ title, children }: { title: string; children: 
 }
 
 export function WorkspaceAssistantPanel({
-  mode,
   workspace,
   selectedNodeId,
   isPending,
   streamingText = '',
-  streamingRunText = '',
   awaitingConfirmation,
   onSubmit,
   onContinueRun,
@@ -41,18 +39,42 @@ export function WorkspaceAssistantPanel({
   isContinuingRun = false,
 }: WorkspaceAssistantPanelProps) {
   const [instruction, setInstruction] = useState('')
+  const threadRef = useRef<HTMLDivElement | null>(null)
   const navigate = useNavigate()
 
-  const latestAssistant = useMemo(() => {
-    if (streamingText.trim()) {
-      return streamingText
-    }
-    return [...workspace.assistantThread].reverse().find((message) => message.role === 'assistant')?.content ?? ''
-  }, [streamingText, workspace.assistantThread])
+  const displayedMessages = useMemo(
+    () => [
+      ...workspace.assistantThread,
+      ...(streamingText
+        ? [
+            {
+              id: 'streaming-assistant',
+              role: 'assistant' as const,
+              content: streamingText,
+              createdAt: new Date().toISOString(),
+            },
+          ]
+        : []),
+    ],
+    [streamingText, workspace.assistantThread],
+  )
 
   const canContinueRun = Boolean(
-    workspace.runBridge?.activeRunId && (awaitingConfirmation || runStatus === 'idle' || runStatus === 'failed' || runStatus === 'canceled'),
+    workspace.runBridge?.activeRunId && (awaitingConfirmation || runStatus === 'waiting_input' || runStatus === 'idle' || runStatus === 'failed' || runStatus === 'canceled'),
   )
+
+  useEffect(() => {
+    const thread = threadRef.current
+    if (!thread) return
+    thread.scrollTo({ top: thread.scrollHeight, behavior: 'smooth' })
+  }, [displayedMessages.length, streamingText])
+
+  const submit = async () => {
+    const text = instruction.trim()
+    if (!text || isPending) return
+    setInstruction('')
+    await onSubmit(text)
+  }
 
   return (
     <aside className='workspace-assistant panel'>
@@ -63,49 +85,42 @@ export function WorkspaceAssistantPanel({
         </button>
       </div>
 
-      <div className='workspace-assistant__notice'>
-        {mode === 'workspace' ? '针对当前章节提出修改要求，AI 会直接改写中间正文。' : 'Run 模式下此区域展示生成过程，不会直接写入当前编辑区。'}
-      </div>
-
-      <div className='workspace-assistant__thread'>
-        {workspace.assistantThread.map((message) => (
+      <div className='workspace-assistant__thread' ref={threadRef}>
+        {displayedMessages.length === 0 ? (
+          <div className='workspace-assistant__empty'>
+            <strong>暂无对话</strong>
+            <p>可以直接询问设定、节奏、人物动机或下一章写法。</p>
+          </div>
+        ) : null}
+        {displayedMessages.map((message) => (
           <div key={message.id} className={`workspace-message workspace-message--${message.role}`}>
             <div className='workspace-message__role'>{message.role === 'assistant' ? 'AI' : message.role === 'user' ? '你' : '系统'}</div>
-            <div className='workspace-message__content'>{message.content}</div>
+            {message.role === 'assistant' ? (
+              <div className='workspace-message__content workspace-message__markdown'>
+                <ReactMarkdown>{message.content}</ReactMarkdown>
+              </div>
+            ) : (
+              <div className='workspace-message__content'>{message.content}</div>
+            )}
           </div>
         ))}
-        {streamingText ? (
-          <div className='workspace-message workspace-message--assistant'>
-            <div className='workspace-message__role'>AI</div>
-            <div className='workspace-message__content'>{latestAssistant}</div>
-          </div>
-        ) : null}
-        {mode === 'run' && streamingRunText ? (
-          <div className='workspace-message workspace-message--assistant'>
-            <div className='workspace-message__role'>生成中</div>
-            <div className='workspace-message__content'>{streamingRunText}</div>
-          </div>
-        ) : null}
       </div>
 
       <div className='assistant-panel__composer'>
-        <input
-          className='input assistant-panel__input'
+        <textarea
+          className='textarea assistant-panel__input workspace-assistant__input'
           value={instruction}
           onChange={(event) => setInstruction(event.target.value)}
-          placeholder='例如：压缩开头节奏并强化人物心理'
-          disabled={mode !== 'workspace' || isPending || !selectedNodeId}
+          placeholder={selectedNodeId ? '和 AI 讨论当前章节...' : '和 AI 讨论这部作品...'}
+          disabled={isPending}
         />
         <button
           className='assistant-panel__send'
           type='button'
-          disabled={mode !== 'workspace' || isPending || !selectedNodeId}
-          onClick={async () => {
-            await onSubmit(instruction)
-            setInstruction('')
-          }}
+          disabled={!instruction.trim() || isPending}
+          onClick={() => void submit()}
         >
-          ✦
+          <Send size={18} />
         </button>
       </div>
 

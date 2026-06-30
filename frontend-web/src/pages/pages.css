@@ -2058,10 +2058,30 @@
   flex: 1;
   min-height: 0;
   display: grid;
+  align-content: start;
   gap: 12px;
   margin-top: 16px;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+.workspace-assistant__empty {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.58);
+  color: #7a695a;
+}
+
+.workspace-assistant__empty strong {
+  color: var(--text-strong);
+  font-size: 14px;
+}
+
+.workspace-assistant__empty p {
+  font-size: 12px;
+  line-height: 1.7;
 }
 
 .workspace-message {
@@ -2090,6 +2110,30 @@
   font-size: 13px;
   line-height: 1.8;
   white-space: pre-wrap;
+}
+
+.workspace-message__markdown {
+  white-space: normal;
+}
+
+.workspace-message__markdown p,
+.workspace-message__markdown ul,
+.workspace-message__markdown ol {
+  margin: 0 0 8px;
+}
+
+.workspace-message__markdown p:last-child,
+.workspace-message__markdown ul:last-child,
+.workspace-message__markdown ol:last-child {
+  margin-bottom: 0;
+}
+
+.workspace-assistant__input {
+  min-height: 76px;
+  max-height: 140px;
+  resize: vertical;
+  border-radius: 16px;
+  font-size: 13px;
 }
 
 .workspace-assistant__actions {

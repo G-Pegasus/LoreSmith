@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 from ainovel_py.internal_api.deps import get_workspace_service, require_internal_auth
 from ainovel_py.internal_api.mappers import envelope
 from ainovel_py.internal_api.response_dto import Envelope, ErrorResponse, WorkspaceReferenceDetailPayload, WorkspaceReferenceSnapshotPayload
-from ainovel_py.internal_api.workspace_dto import WorkspaceIntentPayload, WorkspaceIntentRequest, WorkspaceNodeMutationRequest, WorkspaceNodeUpdateRequest, WorkspaceRunBridgeUpdateRequest, WorkspaceSnapshotPayload
+from ainovel_py.internal_api.workspace_dto import WorkspaceAssistantThreadUpdateRequest, WorkspaceIntentPayload, WorkspaceIntentRequest, WorkspaceNodeMutationRequest, WorkspaceNodeUpdateRequest, WorkspaceRunBridgeUpdateRequest, WorkspaceSnapshotPayload
 from ainovel_py.internal_api.workspace_service import WorkspaceService
 
 router = APIRouter(prefix="/internal/v1", dependencies=[Depends(require_internal_auth)])
@@ -30,6 +30,11 @@ async def workspace_update_node(node_id: str, req: WorkspaceNodeUpdateRequest, s
 @router.put("/workspace/run-bridge", response_model=Envelope[WorkspaceSnapshotPayload], responses={401: {"model": ErrorResponse}})
 async def workspace_run_bridge_update(req: WorkspaceRunBridgeUpdateRequest, story_id: str = Query(min_length=1), service: WorkspaceService = Depends(get_workspace_service)) -> dict[str, object]:
     return envelope(service.update_workspace_run_bridge(story_id, req))
+
+
+@router.put("/workspace/assistant-thread", response_model=Envelope[WorkspaceSnapshotPayload], responses={401: {"model": ErrorResponse}})
+async def workspace_assistant_thread_update(req: WorkspaceAssistantThreadUpdateRequest, story_id: str = Query(min_length=1), service: WorkspaceService = Depends(get_workspace_service)) -> dict[str, object]:
+    return envelope(service.update_workspace_assistant_thread(story_id, req))
 
 
 @router.get("/workspace/reference-snapshot", response_model=Envelope[WorkspaceReferenceSnapshotPayload], responses={401: {"model": ErrorResponse}})

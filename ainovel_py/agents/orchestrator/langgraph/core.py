@@ -45,6 +45,7 @@ class LangGraphRuntime(LLMCoordinatorBackend):
     store: Store
     emit_event: Callable[[Event], None]
     emit_stream: Callable[[str, str], None]
+    on_checkpoint_pending: Callable[[PendingRunCheckpoint], None] | None = None
 
     def __post_init__(self) -> None:
         self._aborted = False
@@ -71,9 +72,8 @@ class LangGraphRuntime(LLMCoordinatorBackend):
         return
 
     def emit_checkpoint_pending(self, pending: PendingRunCheckpoint) -> None:
-        handler = getattr(self.runner.backend, 'emit_checkpoint_pending', None)
-        if callable(handler):
-            handler(pending)
+        if self.on_checkpoint_pending is not None:
+            self.on_checkpoint_pending(pending)
 
     def _invoke(self, seed_text: str, resume_mode: bool) -> None:
         state: GraphState = {

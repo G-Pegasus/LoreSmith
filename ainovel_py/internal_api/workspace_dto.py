@@ -105,3 +105,7 @@ class WorkspaceRunBridgeUpdateRequest(BaseModel):
     runSyncStatus: str = 'idle'
     runSyncUpdatedAt: Optional[str] = None
     lastCompletedChapter: Optional[str] = None
+
+
+class WorkspaceAssistantThreadUpdateRequest(BaseModel):
+    assistantThread: list[dict] = Field(default_factory=list)

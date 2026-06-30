@@ -18,14 +18,14 @@ def envelope(data: object, code: str = "OK", message: str = "success") -> dict[s
 def map_product_status(session: RunSession, lifecycle: str, awaiting_confirmation: dict | None = None) -> str:
     if session.is_busy():
         return "running"
+    if awaiting_confirmation:
+        return "waiting_input"
     if session.state_override == "failed":
         return "failed"
     if session.state_override == "canceled":
         return "canceled"
     if getattr(session, "has_queued_task", False):
         return "queued"
-    if awaiting_confirmation:
-        return "waiting_input"
     if lifecycle == "running":
         return "running"
     if lifecycle == "completed":
@@ -36,10 +36,11 @@ def map_product_status(session: RunSession, lifecycle: str, awaiting_confirmatio
 def map_run(session: RunSession, report: dict[str, object]) -> dict[str, object]:
     lifecycle = str(report.get("lifecycle", "") or "idle")
     awaiting_confirmation = report.get("awaiting_confirmation") if isinstance(report.get("awaiting_confirmation"), dict) else None
+    status = map_product_status(session, lifecycle, awaiting_confirmation)
     return {
         "run_id": session.run_id,
         "story_id": session.story_id,
-        "status": map_product_status(session, lifecycle, awaiting_confirmation),
+        "status": status,
         "kernel_status": lifecycle,
         "phase": report.get("phase") or "",
         "flow": report.get("flow") or "",
@@ -56,7 +57,7 @@ def map_run(session: RunSession, report: dict[str, object]) -> dict[str, object]
             "code": session.last_error_code,
             "message": session.last_error_message,
         }
-        if session.last_error_code or session.last_error_message
+        if status == "failed" and (session.last_error_code or session.last_error_message)
         else None,
         "awaiting_confirmation": awaiting_confirmation,
     }

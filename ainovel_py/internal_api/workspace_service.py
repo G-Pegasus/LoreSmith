@@ -99,11 +99,11 @@ class WorkspaceService:
     def _resolve_workspace_run_status(self, run_id: str, progress, pending_checkpoint) -> str:
         if not run_id:
             return "idle"
+        if pending_checkpoint is not None:
+            return "waiting_input"
         registry_status = self._load_registry_run_status(run_id)
         if registry_status:
             return registry_status
-        if pending_checkpoint is not None:
-            return "waiting_input"
         completed = progress.completed_chapters if progress else []
         if progress and (progress.in_progress_chapter > 0 or progress.current_chapter > len(completed or [])):
             return "running"
@@ -306,6 +306,17 @@ class WorkspaceService:
         meta["runSyncStatus"] = req.runSyncStatus
         meta["runSyncUpdatedAt"] = req.runSyncUpdatedAt
         meta["lastCompletedChapter"] = req.lastCompletedChapter
+        self._save_workspace_meta(store, meta)
+        return self.get_workspace_snapshot(workspace_id)
+
+    def update_workspace_assistant_thread(self, story_id: str, req) -> dict[str, object]:
+        workspace_id = (story_id or "").strip()
+        if not workspace_id:
+            raise ApiError("INVALID_ARGUMENT", "story_id is required", 400)
+        store = Store(str(Path("output") / "workspace" / workspace_id))
+        store.init()
+        meta = self._load_workspace_meta(store)
+        meta["assistantThread"] = self._normalize_assistant_thread(req.assistantThread)
         self._save_workspace_meta(store, meta)
         return self.get_workspace_snapshot(workspace_id)
 
@@ -736,6 +747,27 @@ class WorkspaceService:
 
     def _save_workspace_meta(self, store: Store, data: dict[str, object]) -> None:
         store.progress.io.write_json(self._workspace_meta_path(), data)
+
+    def _normalize_assistant_thread(self, items: list[dict]) -> list[dict[str, str]]:
+        thread: list[dict[str, str]] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            role = str(item.get("role", "") or "").strip()
+            if role not in {"user", "assistant", "system"}:
+                continue
+            content = str(item.get("content", "") or "").strip()
+            if not content:
+                continue
+            message_id = str(item.get("id", "") or item.get("messageId", "") or uuid.uuid4()).strip()
+            created_at = str(item.get("createdAt", "") or item.get("created_at", "") or "").strip()
+            thread.append({
+                "id": message_id,
+                "role": role,
+                "content": content,
+                "createdAt": created_at,
+            })
+        return thread[-100:]
 
     def _collect_workspace_chapter_numbers(self, store: Store, outline: list, progress) -> list[int]:
         chapter_numbers: set[int] = {item.chapter for item in outline if getattr(item, "chapter", 0) > 0}

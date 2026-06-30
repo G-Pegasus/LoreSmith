@@ -10,6 +10,7 @@ import type {
   StoryCompass,
   StoryReferenceDetail,
   StoryWorkspace,
+  WorkspaceAssistantMessage,
   VolumePlan,
   VolumeSummary,
   WorkspaceAssistantStreamResponse,
@@ -431,7 +432,29 @@ export async function appendAssistantMessage(
     throw new ApiError('流式响应未结束', 'INCOMPLETE_STREAM', response.status)
   }
 
-  return donePayload
+  const content = donePayload.content ?? donePayload.result?.content ?? ''
+  return {
+    ...donePayload,
+    content,
+    fallbackUsed: donePayload.fallbackUsed ?? Boolean(donePayload.fallback_used),
+  } satisfies WorkspaceAssistantStreamResponse
+}
+
+export async function saveWorkspaceAssistantThread(storyId: string, workspace: StoryWorkspace, assistantThread: WorkspaceAssistantMessage[]) {
+  try {
+    return await pythonFetch<StoryWorkspace>(`/internal/v1/workspace/assistant-thread?story_id=${encodeURIComponent(storyId)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ assistantThread }),
+    })
+  } catch (error) {
+    if (!isWorkspaceFallbackError(error)) {
+      throw error
+    }
+    return saveWorkspaceLocal({
+      ...workspace,
+      assistantThread,
+    })
+  }
 }
 
 function normalizeRunWordCount(wordCount?: StoryWordCount | null) {
