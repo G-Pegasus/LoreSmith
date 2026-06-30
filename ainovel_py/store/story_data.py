@@ -34,41 +34,27 @@ from ainovel_py.store.io import IO
 
 
 def _pair_key(a: str, b: str) -> str:
-    """生成人物关系对的排序键（确保 a|b 和 b|a 相同）"""
     return "|".join(sorted([a, b]))
 
 
 class OutlineStore:
-    """
-    大纲存储管理器
-    
-    负责管理小说大纲相关的数据：
-    - premise: 故事前提
-    - outline: 扁平章节大纲
-    - layered_outline: 分层大纲（卷/篇章/章节）
-    - compass: 故事罗盘
-    """
     def __init__(self, io: IO) -> None:
         self.io = io
 
     def save_premise(self, content: str) -> None:
-        """保存故事前提"""
         self.io.write_markdown("premise.md", content)
 
     def load_premise(self) -> str:
-        """加载故事前提"""
         try:
             return self.io.read_file("premise.md").decode("utf-8")
         except FileNotFoundError:
             return ""
 
     def save_outline(self, entries: list[OutlineEntry]) -> None:
-        """保存扁平章节大纲"""
         payload = [asdict(x) for x in entries]
         self.io.write_json("outline.json", payload)
 
     def load_outline(self) -> list[OutlineEntry]:
-        """加载扁平章节大纲"""
         try:
             data = self.io.read_json("outline.json")
         except FileNotFoundError:
@@ -85,19 +71,16 @@ class OutlineStore:
         ]
 
     def get_chapter_outline(self, chapter: int) -> OutlineEntry | None:
-        """获取指定章节的大纲"""
         for item in self.load_outline():
             if item.chapter == chapter:
                 return item
         return None
 
     def save_layered_outline(self, volumes: list[VolumeOutline]) -> None:
-        """保存分层大纲（同时更新扁平大纲）"""
         self.io.write_json("layered_outline.json", [asdict(v) for v in volumes])
         self.save_outline(flatten_outline(volumes))
 
     def load_layered_outline(self) -> list[VolumeOutline]:
-        """加载分层大纲"""
         try:
             data = self.io.read_json("layered_outline.json")
         except FileNotFoundError:
@@ -137,11 +120,9 @@ class OutlineStore:
         return out
 
     def save_compass(self, compass: StoryCompass) -> None:
-        """保存故事罗盘"""
         self.io.write_json("meta/compass.json", asdict(compass))
 
     def load_compass(self) -> StoryCompass | None:
-        """加载故事罗盘"""
         try:
             data = self.io.read_json("meta/compass.json")
         except FileNotFoundError:
@@ -155,20 +136,13 @@ class OutlineStore:
 
 
 class CharacterStore:
-    """
-    人物存储管理器
-    
-    负责管理小说中的人物定义数据。
-    """
     def __init__(self, io: IO) -> None:
         self.io = io
 
     def save(self, chars: list[Character]) -> None:
-        """保存人物列表"""
         self.io.write_json("characters.json", [asdict(c) for c in chars])
 
     def load(self) -> list[Character]:
-        """加载人物列表"""
         try:
             data = self.io.read_json("characters.json")
         except FileNotFoundError:
@@ -188,23 +162,13 @@ class CharacterStore:
 
 
 class DraftStore:
-    """
-    草稿存储管理器
-    
-    负责管理章节草稿和最终内容：
-    - 章节计划（plan）
-    - 草稿内容（draft）
-    - 最终章节（chapter）
-    """
     def __init__(self, io: IO) -> None:
         self.io = io
 
     def save_chapter_plan(self, plan: ChapterPlan) -> None:
-        """保存章节计划"""
         self.io.write_json(f"drafts/{plan.chapter:02d}.plan.json", asdict(plan))
 
     def load_chapter_plan(self, chapter: int) -> ChapterPlan | None:
-        """加载章节计划"""
         try:
             data = self.io.read_json(f"drafts/{chapter:02d}.plan.json")
         except FileNotFoundError:
@@ -237,11 +201,9 @@ class DraftStore:
         )
 
     def save_draft(self, chapter: int, content: str) -> None:
-        """保存章节草稿"""
         self.io.write_markdown(f"drafts/{chapter:02d}.draft.md", content)
 
     def append_draft(self, chapter: int, content: str) -> None:
-        """追加内容到章节草稿"""
         rel = f"drafts/{chapter:02d}.draft.md"
         try:
             existing = self.io.read_file(rel).decode("utf-8")
@@ -251,30 +213,25 @@ class DraftStore:
         self.io.write_markdown(rel, merged)
 
     def load_draft(self, chapter: int) -> str:
-        """加载章节草稿"""
         try:
             return self.io.read_file(f"drafts/{chapter:02d}.draft.md").decode("utf-8")
         except FileNotFoundError:
             return ""
 
     def load_chapter_content(self, chapter: int) -> tuple[str, int]:
-        """加载章节内容并返回内容和长度"""
         content = self.load_draft(chapter)
         return content, len(content)
 
     def save_final_chapter(self, chapter: int, content: str) -> None:
-        """保存最终章节内容"""
         self.io.write_markdown(f"chapters/{chapter:02d}.md", content)
 
     def load_chapter_text(self, chapter: int) -> str:
-        """加载最终章节内容"""
         try:
             return self.io.read_file(f"chapters/{chapter:02d}.md").decode("utf-8")
         except FileNotFoundError:
             return ""
 
     def load_chapter_range(self, start: int, end: int, max_runes: int = 2000) -> dict[int, str]:
-        """加载指定范围的章节内容（带长度限制）"""
         out: dict[int, str] = {}
         for ch in range(start, end + 1):
             text = self.load_chapter_text(ch)
@@ -287,23 +244,13 @@ class DraftStore:
 
 
 class SummaryStore:
-    """
-    摘要存储管理器
-    
-    负责管理各级摘要数据：
-    - 章节摘要（ChapterSummary）
-    - 篇章摘要（ArcSummary）
-    - 卷摘要（VolumeSummary）
-    """
     def __init__(self, io: IO) -> None:
         self.io = io
 
     def save_summary(self, summary: ChapterSummary) -> None:
-        """保存章节摘要"""
         self.io.write_json(f"summaries/{summary.chapter:02d}.json", asdict(summary))
 
     def load_summary(self, chapter: int) -> ChapterSummary | None:
-        """加载章节摘要"""
         try:
             data = self.io.read_json(f"summaries/{chapter:02d}.json")
         except FileNotFoundError:
@@ -319,7 +266,6 @@ class SummaryStore:
         )
 
     def load_recent_summaries(self, current: int, count: int) -> list[ChapterSummary]:
-        """加载最近的章节摘要"""
         out: list[ChapterSummary] = []
         for ch in range(max(current - count, 1), current):
             item = self.load_summary(ch)
@@ -328,15 +274,12 @@ class SummaryStore:
         return out
 
     def save_arc_summary(self, summary: ArcSummary) -> None:
-        """保存篇章摘要"""
         self.io.write_json(f"summaries/arc-v{summary.volume:02d}a{summary.arc:02d}.json", asdict(summary))
 
     def save_volume_summary(self, summary: VolumeSummary) -> None:
-        """保存卷摘要"""
         self.io.write_json(f"summaries/vol-v{summary.volume:02d}.json", asdict(summary))
 
     def load_arc_summary(self, volume: int, arc: int) -> ArcSummary | None:
-        """加载篇章摘要"""
         try:
             data = self.io.read_json(f"summaries/arc-v{volume:02d}a{arc:02d}.json")
         except FileNotFoundError:
@@ -350,7 +293,6 @@ class SummaryStore:
         )
 
     def load_arc_summaries(self, volume: int) -> list[ArcSummary]:
-        """加载指定卷的所有篇章摘要"""
         out: list[ArcSummary] = []
         for arc in range(1, 21):
             item = self.load_arc_summary(volume, arc)
@@ -359,7 +301,6 @@ class SummaryStore:
         return out
 
     def load_volume_summary(self, volume: int) -> VolumeSummary | None:
-        """加载卷摘要"""
         try:
             data = self.io.read_json(f"summaries/vol-v{volume:02d}.json")
         except FileNotFoundError:
@@ -372,7 +313,6 @@ class SummaryStore:
         )
 
     def load_all_volume_summaries(self) -> list[VolumeSummary]:
-        """加载所有卷摘要"""
         out: list[VolumeSummary] = []
         for vol in range(1, 21):
             item = self.load_volume_summary(vol)
@@ -382,45 +322,26 @@ class SummaryStore:
 
 
 class WorldStore:
-    """
-    世界设定存储管理器
-    
-    负责管理小说世界设定相关的数据：
-    - world_rules: 世界规则
-    - timeline: 时间线事件
-    - foreshadow_ledger: 伏笔账本
-    - relationship_state: 人物关系状态
-    - character_snapshots: 人物快照
-    - style_rules: 写作风格规则
-    - state_changes: 状态变更记录
-    - reviews: 评审结果
-    """
     def __init__(self, io: IO) -> None:
         self.io = io
 
     def save_world_rules(self, rules: list[WorldRule]) -> None:
-        """保存世界规则"""
         self.io.write_json("world_rules.json", [asdict(x) for x in rules])
 
     def save_timeline(self, events: list[TimelineEvent]) -> None:
-        """保存时间线事件"""
         self.io.write_json("timeline.json", [asdict(x) for x in events])
 
     def save_foreshadow_ledger(self, entries: list[ForeshadowEntry]) -> None:
-        """保存伏笔账本"""
         self.io.write_json("foreshadow_ledger.json", [asdict(x) for x in entries])
 
     def save_relationships(self, entries: list[RelationshipEntry]) -> None:
-        """保存人物关系状态"""
         self.io.write_json("relationship_state.json", [asdict(x) for x in entries])
 
     def save_character_snapshots(self, volume: int, arc: int, snapshots: list[CharacterSnapshot]) -> None:
-        """保存人物快照（按卷和篇章存储）"""
         payload = [asdict(x) for x in snapshots]
         self.io.write_json(f"meta/snapshots/v{volume:02d}a{arc:02d}.json", payload)
 
     def load_latest_character_snapshots(self) -> list[CharacterSnapshot]:
-        """加载最新的人物快照"""
         latest: tuple[int, int] | None = None
         for vol in range(1, 50):
             for arc in range(1, 50):
@@ -448,11 +369,9 @@ class WorldStore:
         ]
 
     def save_style_rules(self, rules: WritingStyleRules) -> None:
-        """保存写作风格规则"""
         self.io.write_json("meta/style_rules.json", asdict(rules))
 
     def load_style_rules(self) -> WritingStyleRules | None:
-        """加载写作风格规则"""
         try:
             data = self.io.read_json("meta/style_rules.json")
         except FileNotFoundError:
@@ -471,7 +390,6 @@ class WorldStore:
         )
 
     def load_world_rules(self) -> list[WorldRule]:
-        """加载世界规则"""
         try:
             data = self.io.read_json("world_rules.json")
         except FileNotFoundError:
@@ -486,7 +404,6 @@ class WorldStore:
         ]
 
     def load_timeline(self) -> list[TimelineEvent]:
-        """加载时间线事件"""
         try:
             data = self.io.read_json("timeline.json")
         except FileNotFoundError:
@@ -502,13 +419,11 @@ class WorldStore:
         ]
 
     def append_timeline_events(self, events: list[TimelineEvent]) -> None:
-        """追加时间线事件"""
         current = self.load_timeline()
         current.extend(events)
         self.io.write_json("timeline.json", [asdict(x) for x in current])
 
     def load_foreshadow_ledger(self) -> list[ForeshadowEntry]:
-        """加载伏笔账本"""
         try:
             data = self.io.read_json("foreshadow_ledger.json")
         except FileNotFoundError:
@@ -525,7 +440,6 @@ class WorldStore:
         ]
 
     def update_foreshadow(self, chapter: int, updates: list[ForeshadowUpdate]) -> None:
-        """更新伏笔状态（plant/advance/resolve）"""
         items = self.load_foreshadow_ledger()
         idx = {x.id: i for i, x in enumerate(items)}
         for u in updates:
@@ -540,11 +454,9 @@ class WorldStore:
         self.io.write_json("foreshadow_ledger.json", [asdict(x) for x in items])
 
     def load_active_foreshadow(self) -> list[ForeshadowEntry]:
-        """加载未解决的伏笔"""
         return [x for x in self.load_foreshadow_ledger() if x.status != "resolved"]
 
     def load_relationships(self) -> list[RelationshipEntry]:
-        """加载人物关系状态"""
         try:
             data = self.io.read_json("relationship_state.json")
         except FileNotFoundError:
@@ -560,7 +472,6 @@ class WorldStore:
         ]
 
     def update_relationships(self, changes: list[RelationshipEntry]) -> None:
-        """更新人物关系（更新或新增）"""
         existing = self.load_relationships()
         idx = {_pair_key(x.character_a, x.character_b): i for i, x in enumerate(existing)}
         for c in changes:
@@ -573,7 +484,6 @@ class WorldStore:
         self.io.write_json("relationship_state.json", [asdict(x) for x in existing])
 
     def load_state_changes(self) -> list[StateChange]:
-        """加载状态变更记录"""
         try:
             data = self.io.read_json("meta/state_changes.json")
         except FileNotFoundError:
@@ -591,18 +501,15 @@ class WorldStore:
         ]
 
     def append_state_changes(self, changes: list[StateChange]) -> None:
-        """追加状态变更记录"""
         current = self.load_state_changes()
         current.extend(changes)
         self.io.write_json("meta/state_changes.json", [asdict(x) for x in current])
 
     def save_review(self, review: ReviewEntry) -> None:
-        """保存评审结果"""
         suffix = "-global" if review.scope == "global" else ""
         self.io.write_json(f"reviews/{review.chapter:02d}{suffix}.json", asdict(review))
 
     def load_review(self, chapter: int) -> ReviewEntry | None:
-        """加载章节评审结果"""
         try:
             data = self.io.read_json(f"reviews/{chapter:02d}.json")
         except FileNotFoundError:
@@ -612,7 +519,6 @@ class WorldStore:
         return parse_review_entry(data)
 
     def load_last_review(self, from_chapter: int) -> ReviewEntry | None:
-        """从指定章节向前查找最新的全局评审"""
         from ainovel_py.tools.parsers import parse_review_entry
 
         for ch in range(from_chapter, 0, -1):

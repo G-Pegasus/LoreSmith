@@ -8,23 +8,10 @@ from ainovel_py.store.io import IO
 
 
 class ProgressStore:
-    """
-    进度存储管理器
-    
-    负责持久化和管理小说创作进度信息，包括：
-    - 当前阶段（INIT/PREMISE/OUTLINE/WRITING/COMPLETE）
-    - 当前流程状态（WRITING/REWRITING/POLISHING）
-    - 章节完成情况
-    - 字数统计
-    - 重写队列
-    
-    所有写操作都通过写锁保护，确保线程安全。
-    """
     def __init__(self, io: IO) -> None:
         self.io = io
 
     def load(self) -> Progress | None:
-        """加载进度信息"""
         try:
             data = self.io.read_json("meta/progress.json")
         except FileNotFoundError:
@@ -32,15 +19,12 @@ class ProgressStore:
         return _progress_from_dict(data)
 
     def save(self, progress: Progress) -> None:
-        """保存进度信息"""
         self.io.write_json("meta/progress.json", asdict(progress))
 
     def init(self, novel_name: str, total_chapters: int) -> None:
-        """初始化进度信息"""
         self.save(Progress(novel_name=novel_name, phase=Phase.INIT, total_chapters=total_chapters))
 
     def update_phase(self, phase: str) -> None:
-        """更新创作阶段（带状态转换验证）"""
         def op() -> None:
             p = self.load() or Progress()
             validate_phase_transition(p.phase, phase)
@@ -50,7 +34,6 @@ class ProgressStore:
         self.io.with_write_lock(op)
 
     def start_chapter(self, chapter: int) -> None:
-        """开始写作指定章节"""
         if chapter <= 0:
             raise ValueError("chapter must be > 0")
 
@@ -67,7 +50,6 @@ class ProgressStore:
         self.io.with_write_lock(op)
 
     def set_flow(self, flow: str) -> None:
-        """设置当前流程状态（带状态转换验证）"""
         def op() -> None:
             p = self.load() or Progress()
             validate_flow_transition(p.flow, flow)
@@ -77,14 +59,12 @@ class ProgressStore:
         self.io.with_write_lock(op)
 
     def is_chapter_completed(self, chapter: int) -> bool:
-        """检查章节是否已完成"""
         p = self.load()
         if p is None:
             return False
         return chapter in p.completed_chapters
 
     def set_total_chapters(self, total: int) -> None:
-        """设置总章节数"""
         def op() -> None:
             p = self.load() or Progress()
             p.total_chapters = total
@@ -93,7 +73,6 @@ class ProgressStore:
         self.io.with_write_lock(op)
 
     def set_novel_name(self, name: str) -> None:
-        """设置小说名称"""
         name = name.strip()
         if not name:
             return
@@ -106,7 +85,6 @@ class ProgressStore:
         self.io.with_write_lock(op)
 
     def set_layered(self, layered: bool) -> None:
-        """设置是否使用分层大纲"""
         def op() -> None:
             p = self.load() or Progress()
             p.layered = layered
@@ -115,7 +93,6 @@ class ProgressStore:
         self.io.with_write_lock(op)
 
     def update_volume_arc(self, volume: int, arc: int) -> None:
-        """更新当前卷和篇章"""
         def op() -> None:
             p = self.load() or Progress()
             p.current_volume = volume
@@ -125,7 +102,6 @@ class ProgressStore:
         self.io.with_write_lock(op)
 
     def set_pending_rewrites(self, chapters: list[int], reason: str) -> None:
-        """设置待重写章节列表"""
         def op() -> None:
             p = self.load() or Progress()
             p.pending_rewrites = list(chapters)
@@ -135,7 +111,6 @@ class ProgressStore:
         self.io.with_write_lock(op)
 
     def complete_rewrite(self, chapter: int) -> None:
-        """标记章节重写完成"""
         def op() -> None:
             p = self.load() or Progress()
             p.pending_rewrites = [x for x in p.pending_rewrites if x != chapter]
@@ -148,7 +123,6 @@ class ProgressStore:
         self.io.with_write_lock(op)
 
     def clear_in_progress(self) -> None:
-        """清除进行中的章节状态"""
         def op() -> None:
             p = self.load() or Progress()
             p.in_progress_chapter = 0
@@ -158,15 +132,6 @@ class ProgressStore:
         self.io.with_write_lock(op)
 
     def mark_chapter_complete(self, chapter: int, word_count: int, hook_type: str = "", dominant_strand: str = "") -> None:
-        """
-        标记章节完成
-        
-        Args:
-            chapter: 章节号
-            word_count: 章节字数
-            hook_type: 钩子类型（可选）
-            dominant_strand: 主线类型（可选）
-        """
         def op() -> None:
             p = self.load() or Progress()
             old_wc = p.chapter_word_counts.get(chapter, 0)

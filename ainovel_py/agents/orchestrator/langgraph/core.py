@@ -1,56 +1,45 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+from datetime import datetime
+from typing import Any, Callable
 
 from langgraph.graph import END, START, StateGraph
 
 from ainovel_py.agents.context_manager import ContextManager
 from ainovel_py.agents.llm_client import OpenAICompatClient
-from ainovel_py.agents.roles import ArchitectAgent, BaseAgent, EditorAgent, RewriteAgent, SupervisorAgent, WriterAgent
-from ainovel_py.agents.runner import AgentRunner
-from ainovel_py.agents.orchestrator.interface import OrchestratorBackend
-from ainovel_py.agents.orchestrator.dispatcher import dispatch_next
-from ainovel_py.agents.orchestrator.tags import TaskTag
+from ainovel_py.agents.runner import AgentRunner, LLMCoordinatorBackend
 from ainovel_py.assets import load_bundle
 from ainovel_py.bootstrap.config import Config
+from ainovel_py.domain.runtime import FlowState
+from ainovel_py.domain.runtime_events import RuntimeQueueItem, RuntimeQueueKind, RuntimeQueuePriority
 from ainovel_py.domain.writing import PendingRunCheckpoint
 from ainovel_py.host.events import Event
 from ainovel_py.store.store import Store
 
 from .nodes import (
+    arc_summary_node,
     checkpoint_node,
+    commit_chapter_node,
+    expand_arc_node,
     finish_node,
+    generate_draft_node,
     load_runtime_context,
+    novel_context_node,
+    plan_chapter_node,
+    review_node,
+    rewrite_node,
     route_after_checkpoint,
+    route_after_commit,
     route_after_load,
+    route_after_plan,
+    volume_summary_node,
 )
-from .nodes.helpers import _append_line
-from .state import GraphState, OrchestratorState
-from .subgraphs import (
-    build_architect_plan_subgraph,
-    build_editor_commit_subgraph,
-    build_editor_review_subgraph,
-    build_summary_subgraph,
-    build_writer_subgraph,
-)
-
-# TaskTag 到子图节点名的映射
-TAG_TO_NODE: dict[str, str] = {
-    TaskTag.PLAN_CHAPTER.value: "architect_plan",
-    TaskTag.WRITE_CHAPTER.value: "writer_write",
-    TaskTag.COMMIT_CHAPTER.value: "editor_commit",
-    TaskTag.REVIEW_CHAPTER.value: "editor_review",
-    TaskTag.REWRITE_CHAPTER.value: "writer_write",
-    TaskTag.ARC_SUMMARY.value: "architect_summary",
-    TaskTag.VOLUME_SUMMARY.value: "architect_summary",
-    TaskTag.EXPAND_ARC.value: "architect_summary",
-    TaskTag.FINISH.value: "finish",
-}
+from .state import GraphState
 
 
 @dataclass
-class LangGraphRuntime(OrchestratorBackend):
+class LangGraphRuntime(LLMCoordinatorBackend):
     cfg: Config
     runner: AgentRunner
     store: Store
@@ -61,20 +50,7 @@ class LangGraphRuntime(OrchestratorBackend):
         self._aborted = False
         self.context_manager = ContextManager(context_window=self.cfg.context_window)
         self.assets = load_bundle(self.cfg.style)
-        self._agents: dict[str, BaseAgent] = {}
-        self._init_agents()
         self.graph = self._build_graph()
-
-    def _init_agents(self) -> None:
-        common = dict(cfg=self.cfg, runner=self.runner, store=self.store, assets=self.assets, emit_event=self.emit_event, emit_stream=self.emit_stream)
-        self._agents["architect"] = ArchitectAgent(**common)
-        self._agents["writer"] = WriterAgent(**common)
-        self._agents["editor"] = EditorAgent(**common)
-        self._agents["rewrite"] = RewriteAgent(**common)
-        self._agents["supervisor"] = SupervisorAgent(**common)
-
-    def get_agent(self, name: str) -> BaseAgent:
-        return self._agents[name]
 
     def start(self, prompt: str) -> None:
         self._aborted = False
@@ -94,15 +70,13 @@ class LangGraphRuntime(OrchestratorBackend):
     def wait_idle(self) -> None:
         return
 
-    @property
-    def is_aborted(self) -> bool:
-        return self._aborted
-
     def emit_checkpoint_pending(self, pending: PendingRunCheckpoint) -> None:
-        pass
+        handler = getattr(self.runner.backend, 'emit_checkpoint_pending', None)
+        if callable(handler):
+            handler(pending)
 
     def _invoke(self, seed_text: str, resume_mode: bool) -> None:
-        state: OrchestratorState = {
+        state: GraphState = {
             "seed_text": seed_text,
             "resume_mode": resume_mode,
             "pending_action": "load",
@@ -129,177 +103,101 @@ class LangGraphRuntime(OrchestratorBackend):
             timeout=120.0,
         )
 
+    def _dict_to_chapter_plan(self, data: dict[str, Any]):
+        return self.runner.backend._dict_to_chapter_plan(data) if hasattr(self.runner, "backend") else LLMCoordinatorBackend._dict_to_chapter_plan(data)
+
     def _build_graph(self):
-        """构建主图 + 子图的二级架构。
-
-        主图结构（角色编排层）：
-        START → load_context → dispatch → [角色子图] → collect → dispatch (循环)
-                        ↓                           → checkpoint → finish → END
-                      finish
-
-        子图结构（技能实现层）：
-        - architect_plan: Architect 的规划章节技能
-        - writer_write: Writer 的写章节技能
-        - editor_commit: Editor 的提交章节技能
-        - editor_review: Editor 的评审章节技能
-        - architect_summary: Architect 的弧/卷摘要技能
-
-        上下文加载策略：懒加载。子图按需调用 ensure_novel_context() 加载上下文，
-        首次加载后缓存到 state["context"]，后续子图直接复用。
-        """
-        graph = StateGraph(OrchestratorState)
-
-        # === 主图节点（角色编排层） ===
-        graph.add_node("load_context", load_runtime_context(self))
-        graph.add_node("dispatch", _dispatch_node(self))
-        graph.add_node("collect", _collect_node(self))
+        graph = StateGraph(GraphState)
+        graph.add_node("load_runtime_context", load_runtime_context(self))
+        graph.add_node("novel_context", novel_context_node(self))
+        graph.add_node("plan_chapter", plan_chapter_node(self))
+        graph.add_node("generate_draft", generate_draft_node(self))
+        graph.add_node("commit_chapter", commit_chapter_node(self))
+        graph.add_node("review", review_node(self))
+        graph.add_node("rewrite", rewrite_node(self))
+        graph.add_node("arc_summary", arc_summary_node(self))
+        graph.add_node("volume_summary", volume_summary_node(self))
+        graph.add_node("expand_arc", expand_arc_node(self))
         graph.add_node("checkpoint", checkpoint_node(self))
         graph.add_node("finish", finish_node(self))
-
-        # === 角色技能子图节点 ===
-        graph.add_node("architect_plan", build_architect_plan_subgraph(self))
-        graph.add_node("writer_write", build_writer_subgraph(self))
-        graph.add_node("editor_commit", build_editor_commit_subgraph(self))
-        graph.add_node("editor_review", build_editor_review_subgraph(self))
-        graph.add_node("architect_summary", build_summary_subgraph(self))
-
-        # === 边 ===
-        graph.add_edge(START, "load_context")
-
-        # load_context → 根据恢复状态决定：dispatch 或 finish
+        graph.add_edge(START, "load_runtime_context")
         graph.add_conditional_edges(
-            "load_context",
-            _route_after_load_to_dispatch,
+            "load_runtime_context",
+            route_after_load,
             {
-                "dispatch": "dispatch",
+                "novel_context": "novel_context",
+                "generate_draft": "generate_draft",
+                "commit_chapter": "commit_chapter",
+                "rewrite": "rewrite",
+                "polish": "rewrite",
                 "finish": "finish",
             },
         )
-
-        # dispatch → 根据 TaskTag 路由到角色子图
+        graph.add_edge("novel_context", "plan_chapter")
         graph.add_conditional_edges(
-            "dispatch",
-            _route_by_tag,
+            "plan_chapter",
+            route_after_plan,
             {
-                "architect_plan": "architect_plan",
-                "writer_write": "writer_write",
-                "editor_commit": "editor_commit",
-                "editor_review": "editor_review",
-                "architect_summary": "architect_summary",
+                "generate_draft": "generate_draft",
                 "finish": "finish",
             },
         )
-
-        # 所有角色子图完成后都回到 collect
-        graph.add_edge("architect_plan", "collect")
-        graph.add_edge("writer_write", "collect")
-        graph.add_edge("editor_commit", "collect")
-        graph.add_edge("editor_review", "collect")
-        graph.add_edge("architect_summary", "collect")
-
-        # collect → 再次 dispatch（循环）或 checkpoint
+        graph.add_edge("generate_draft", "commit_chapter")
         graph.add_conditional_edges(
-            "collect",
-            _route_after_collect,
+            "commit_chapter",
+            route_after_commit,
             {
-                "dispatch": "dispatch",
+                "review": "review",
+                "rewrite": "rewrite",
+                "polish": "rewrite",
+                "arc_summary": "arc_summary",
+                "volume_summary": "volume_summary",
+                "expand_arc": "expand_arc",
                 "checkpoint": "checkpoint",
+                "finish": "finish",
             },
         )
-
+        graph.add_conditional_edges(
+            "review",
+            route_after_commit,
+            {
+                "rewrite": "rewrite",
+                "polish": "rewrite",
+                "arc_summary": "arc_summary",
+                "volume_summary": "volume_summary",
+                "expand_arc": "expand_arc",
+                "checkpoint": "checkpoint",
+                "finish": "finish",
+            },
+        )
+        graph.add_conditional_edges(
+            "arc_summary",
+            route_after_commit,
+            {
+                "volume_summary": "volume_summary",
+                "expand_arc": "expand_arc",
+                "checkpoint": "checkpoint",
+                "finish": "finish",
+            },
+        )
+        graph.add_conditional_edges(
+            "volume_summary",
+            route_after_commit,
+            {
+                "expand_arc": "expand_arc",
+                "checkpoint": "checkpoint",
+                "finish": "finish",
+            },
+        )
+        graph.add_edge("rewrite", "checkpoint")
+        graph.add_edge("expand_arc", "checkpoint")
         graph.add_conditional_edges(
             "checkpoint",
-            _route_after_checkpoint_to_dispatch,
+            route_after_checkpoint,
             {
-                "dispatch": "dispatch",
+                "novel_context": "novel_context",
                 "finish": "finish",
             },
         )
-
         graph.add_edge("finish", END)
-
         return graph.compile()
-
-
-# ============================================================
-# 主图节点实现
-# ============================================================
-
-def _dispatch_node(runtime: "LangGraphRuntime") -> Callable[[OrchestratorState], OrchestratorState]:
-    """主 Agent 的 dispatch 节点：分析状态，决定任务分配给哪个角色。"""
-    def _node(state: OrchestratorState) -> OrchestratorState:
-        tag = dispatch_next(state)
-        state["current_tag"] = tag.value
-        reason = f"last={state.get('last_completed_tag', 'none')} pending={state.get('pending_action', 'none')}"
-        state["dispatch_reason"] = reason
-        _append_line(state, f"[dispatch] tag={tag.value} reason={reason}")
-        return state
-    return _node
-
-
-def _collect_node(runtime: "LangGraphRuntime") -> Callable[[OrchestratorState], OrchestratorState]:
-    """主 Agent 的 collect 节点：收集角色子图产出，更新状态。"""
-    def _node(state: OrchestratorState) -> OrchestratorState:
-        completed_tag = str(state.get("current_tag") or "")
-        state["last_completed_tag"] = completed_tag
-        _append_line(state, f"[collect] completed={completed_tag}")
-
-        # 检查是否需要 checkpoint
-        pending_action = str(state.get("pending_action") or "")
-        if pending_action == "finish":
-            state["pending_action"] = "finish"
-        elif pending_action in ("checkpoint", "continue", "novel_context"):
-            state["pending_action"] = "checkpoint"
-        else:
-            # 子图可能已设置了 pending_action（如 review 后的 rewrite）
-            # 保留该值，让 dispatch 在下一轮处理
-            pass
-
-        return state
-    return _node
-
-
-# ============================================================
-# 路由函数
-# ============================================================
-
-def _route_after_load_to_dispatch(state: OrchestratorState) -> str:
-    """load_context 后的路由：决定进入 dispatch 还是 finish。"""
-    action = str(state.get("pending_action") or "dispatch")
-    if action == "finish":
-        return "finish"
-    return "dispatch"
-
-
-def _route_by_tag(state: OrchestratorState) -> str:
-    """根据 current_tag 路由到对应的角色子图节点。"""
-    tag = str(state.get("current_tag") or "")
-    node = TAG_TO_NODE.get(tag)
-    if node:
-        return node
-    # 未知 tag → 回到 dispatch 重新决策
-    return "dispatch"
-
-
-def _route_after_collect(state: OrchestratorState) -> str:
-    """collect 后的路由：决定继续 dispatch 还是进入 checkpoint。"""
-    pending_action = str(state.get("pending_action") or "")
-    if pending_action == "finish":
-        return "checkpoint"
-    if pending_action == "checkpoint":
-        return "checkpoint"
-    # 默认继续 dispatch（循环）
-    return "dispatch"
-
-
-def _route_after_checkpoint_to_dispatch(state: OrchestratorState) -> str:
-    """checkpoint 后的路由：决定进入 dispatch 还是 finish。"""
-    action = str(state.get("pending_action") or "finish")
-    if action in ("novel_context", "continue"):
-        # checkpoint 决定继续下一章 → 重新 dispatch
-        state["last_completed_tag"] = ""
-        return "dispatch"
-    if action == "finish":
-        return "finish"
-    # 其他情况也回到 dispatch
-    return "dispatch"
