@@ -12,6 +12,19 @@ dependencies = [
   "langgraph>=0.2.0",
   "fastapi>=0.116.0",
   "uvicorn>=0.35.0",
+  "pydantic>=2.0.0",
+  "sse-starlette>=1.6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.0.0",
+  "pytest-cov>=4.0.0",
+  "pytest-asyncio>=0.21.0",
+  "httpx>=0.24.0",
+  "black>=23.0.0",
+  "ruff>=0.0.260",
+  "mypy>=1.0.0",
 ]
 
 [tool.setuptools]
@@ -20,3 +33,85 @@ package-dir = {"" = "."}
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["ainovel_py*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_smoke.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*", "main"]
+addopts = "-v --tb=short --strict-markers"
+markers = [
+  "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+  "integration: marks tests as integration tests",
+  "smoke: marks tests as smoke tests",
+]
+
+[tool.coverage.run]
+source = ["ainovel_py"]
+branch = true
+omit = [
+  "*/tests/*",
+  "*/__pycache__/*",
+  "*/site-packages/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+  "pragma: no cover",
+  "def __repr__",
+  "raise AssertionError",
+  "raise NotImplementedError",
+  "if __name__ == .__main__.:",
+  "if TYPE_CHECKING:",
+  "@abstractmethod",
+]
+
+[tool.black]
+line-length = 120
+target-version = ["py310"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # defaults
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+  # project specific
+  | output
+  | \.repo-source-cache
+)/
+'''
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["E501"]
+exclude = [
+  ".git",
+  ".hg",
+  ".mypy_cache",
+  ".tox",
+  ".venv",
+  "build",
+  "dist",
+  "output",
+  ".repo-source-cache",
+]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+exclude = [
+  "tests/",
+  "output/",
+  ".repo-source-cache/",
+]

@@ -9,14 +9,44 @@ from ainovel_py.store.store import Store
 
 
 class NovelContextTool:
+    """
+    小说上下文工具
+    
+    负责从存储中加载和组装小说创作所需的完整上下文信息。
+    根据传入的章节号，可以返回不同层级的上下文：
+    - chapter <= 0: 返回架构师级别的上下文（适合大纲规划）
+    - chapter > 0: 返回作家级别的上下文（适合章节写作）
+    
+    返回的上下文包含：
+    - progress_status: 当前进度状态
+    - premise: 故事前提
+    - outline: 章节大纲
+    - characters: 人物列表
+    - world_rules: 世界规则
+    - recent_summaries: 最近章节摘要（章节模式）
+    - timeline: 时间线事件
+    - foreshadow_ledger: 活跃伏笔
+    - relationship_state: 人物关系状态
+    - chapter_plan: 章节计划
+    - latest_review: 最近评审结果
+    """
     def __init__(self, store: Store, style: str = "default") -> None:
         self.store = store
         self.style = style
 
     def name(self) -> str:
+        """返回工具名称"""
         return "novel_context"
 
     def execute(self, args: dict[str, Any]) -> dict[str, Any]:
+        """
+        执行上下文加载
+        
+        Args:
+            args: 参数字典，包含 chapter 字段
+        Returns:
+            包含所有上下文信息的字典
+        """
         chapter = int(args.get("chapter", 0) or 0)
         result: dict[str, Any] = {}
 

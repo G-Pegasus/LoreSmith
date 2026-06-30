@@ -8,13 +8,29 @@ from ainovel_py.store.store import Store
 
 
 class CheckConsistencyTool:
+    """
+    一致性检查工具
+    
+    用于检查章节内容与世界设定、人物关系、伏笔等的一致性。
+    加载相关上下文信息供后续处理使用。
+    """
     def __init__(self, store: Store) -> None:
         self.store = store
 
     def name(self) -> str:
+        """返回工具名称"""
         return "check_consistency"
 
     def execute(self, args: dict[str, Any]) -> dict[str, Any]:
+        """
+        执行一致性检查
+        
+        Args:
+            args: 参数字典，包含 chapter 字段
+        
+        Returns:
+            包含章节内容和相关上下文的字典
+        """
         chapter = int(args.get("chapter", 0) or 0)
         if chapter <= 0:
             raise ValueError("chapter must be > 0")

@@ -8,15 +8,31 @@ from ainovel_py.store.store import Store
 
 
 class DraftChapterTool:
+    """
+    章节草稿工具
+    
+    负责保存章节草稿内容，支持写入和追加两种模式。
+    自动处理章节标题，更新章节计划中的标题信息。
+    """
     _CHAPTER_HEADING_PATTERN = re.compile(r"^第\s*\d+\s*章(?:[:：\-—\s].*)?$")
 
     def __init__(self, store: Store) -> None:
         self.store = store
 
     def name(self) -> str:
+        """返回工具名称"""
         return "draft_chapter"
 
     def execute(self, args: dict[str, Any]) -> dict[str, Any]:
+        """
+        执行章节草稿保存
+        
+        Args:
+            args: 参数字典，包含 chapter（章节号）、content（内容）、mode（模式：write/append）
+        
+        Returns:
+            操作结果字典，包含是否写入成功、章节号、字数等信息
+        """
         chapter = int(args.get("chapter", 0) or 0)
         content = str(args.get("content", "") or "")
         mode = str(args.get("mode", "write") or "write")
@@ -64,6 +80,16 @@ class DraftChapterTool:
         }
 
     def _sanitize_content(self, chapter: int, content: str) -> str:
+        """
+        清理章节内容，移除章节标题行（如果存在）
+        
+        Args:
+            chapter: 章节号
+            content: 原始内容
+        
+        Returns:
+            清理后的内容
+        """
         text = content.lstrip("\ufeff").strip()
         if not text:
             return ""

@@ -16,12 +16,33 @@ RUNTIME_CONTROL_PATH = "meta/runtime/control.json"
 
 
 class RuntimeStore:
+    """
+    运行时队列存储管理器
+    
+    负责管理异步任务队列，支持任务的追加、查询和重置操作。
+    使用 JSONL 格式存储队列数据，确保写入的原子性。
+    
+    队列项用于记录：
+    - 待处理的写作任务
+    - 重写请求
+    - 评审任务
+    - 其他异步操作
+    """
     def __init__(self, io: IO) -> None:
         self.io = io
         self._seq_loaded = False
         self._next_seq = 0
 
     def append_queue(self, item: RuntimeQueueItem) -> RuntimeQueueItem:
+        """
+        追加队列项（带自动序列号分配）
+        
+        Args:
+            item: 队列项
+        
+        Returns:
+            带有序列号的队列项
+        """
         def op() -> RuntimeQueueItem:
             self._ensure_seq_loaded_locked()
             self._next_seq += 1
@@ -36,6 +57,7 @@ class RuntimeStore:
         return self.io.with_write_lock(op)
 
     def load_queue(self) -> list[RuntimeQueueItem]:
+        """加载完整的运行时队列"""
         try:
             data = self.io.read_file(RUNTIME_QUEUE_PATH).decode("utf-8")
         except FileNotFoundError:
@@ -62,12 +84,14 @@ class RuntimeStore:
         return out
 
     def load_queue_after(self, after_seq: int) -> list[RuntimeQueueItem]:
+        """加载指定序列号之后的队列项"""
         items = self.load_queue()
         if after_seq <= 0:
             return items
         return [x for x in items if x.seq > after_seq]
 
     def reset(self) -> None:
+        """重置运行时状态（清空队列和任务目录）"""
         queue_file = self.io.path(RUNTIME_QUEUE_PATH)
         control_file = self.io.path(RUNTIME_CONTROL_PATH)
         tasks_dir = self.io.path("meta/runtime/tasks")
@@ -84,6 +108,7 @@ class RuntimeStore:
         self._next_seq = 0
 
     def _ensure_seq_loaded_locked(self) -> None:
+        """确保序列号已加载（线程安全）"""
         if self._seq_loaded:
             return
         items = self.load_queue()

@@ -3,6 +3,11 @@ java-platform/target/
 java-platform/.idea/
 java-platform/*.iml
 .gradle/
+*.class
+*.jar
+*.war
+*.ear
+*.log
 
 # Python 虚拟环境
 .venv/
@@ -11,22 +16,95 @@ ENV/
 env/
 .py[cod]
 
-# 缓存文件
+# Python 缓存文件
 __pycache__/
 ainovel_py.egg-info/
 *.py[cod]
 *.so
+*.pyo
+*.pyd
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+.hypothesis/
 
 # 编辑器、系统文件
 .idea/
 .vscode/
 .DS_Store
 .claude/
+.cursors/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# Trae IDE 工作目录
+.trae/
+
+# 项目特定的临时文件
+.repo-source-cache/
+agent-candidates.json
+agent-shortlist.md
+repo-source-manifest.json
+process_doc.py
+read_doc.py
+
+# 文档和构建输出
 docs/
 build/
 output/
+dist/
+*.egg-info/
 
 # 前端
 frontend-web/node_modules/
 frontend-web/dist/
 frontend-web/.env.local
+frontend-web/.env.*.local
+frontend-web/npm-debug.log*
+frontend-web/yarn-debug.log*
+frontend-web/yarn-error.log*
+frontend-web/.pnpm-debug.log*
+
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3
+
+# 日志文件
+*.log
+logs/
+
+# 环境变量文件
+.env
+.env.local
+.env.*.local
+
+# 操作系统文件
+Thumbs.db
+Desktop.ini
+
+# 临时文件
+*.tmp
+*.temp
+*.bak
+*.cache
+
+# 测试覆盖率
+coverage/
+.nyc_output/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json

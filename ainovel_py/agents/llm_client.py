@@ -11,16 +11,28 @@ from typing import Callable
 
 @dataclass
 class OpenAICompatClient:
-    api_key: str
-    model: str
-    base_url: str = ""
-    timeout: float = 60.0
+    """
+    OpenAI 兼容客户端
+    
+    提供与 OpenAI API 兼容的 LLM 调用接口，支持同步调用和流式调用。
+    可通过环境变量配置超时参数：
+    - AINOVEL_HTTP_TIMEOUT: 单次请求超时
+    - AINOVEL_STREAM_TOTAL_TIMEOUT: 流式请求总超时
+    
+    支持的模型服务商包括：OpenAI、Anthropic、Gemini、DeepSeek、Qwen、GLM 等
+    """
+    api_key: str           # API 密钥
+    model: str             # 模型名称
+    base_url: str = ""     # API 基础 URL（默认为 OpenAI）
+    timeout: float = 60.0  # 请求超时时间（秒）
 
     def _endpoint(self) -> str:
+        """构建 API 端点 URL"""
         base = (self.base_url or "https://api.openai.com/v1").rstrip("/")
         return f"{base}/chat/completions"
 
     def effective_timeout(self) -> float:
+        """获取有效的请求超时时间（优先环境变量）"""
         raw = os.environ.get("AINOVEL_HTTP_TIMEOUT", "").strip()
         if raw:
             try:
@@ -30,6 +42,7 @@ class OpenAICompatClient:
         return self.timeout
 
     def effective_stream_total_timeout(self) -> float:
+        """获取有效的流式请求总超时时间（优先环境变量）"""
         raw = os.environ.get("AINOVEL_STREAM_TOTAL_TIMEOUT", "").strip()
         if raw:
             try:

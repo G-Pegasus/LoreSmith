@@ -17,13 +17,42 @@ from ainovel_py.tools.parsers import (
 
 
 class SaveFoundationTool:
+    """
+    基础设定保存工具
+    
+    负责保存小说的各种基础设定，包括：
+    - premise: 故事前提
+    - outline: 章节大纲
+    - layered_outline: 分层大纲（卷-篇章-章节）
+    - characters: 人物设定
+    - world_rules: 世界规则
+    - expand_arc: 扩展篇章
+    - append_volume: 追加卷
+    - mark_final: 标记卷为最终状态
+    - update_compass: 更新故事罗盘
+    """
     def __init__(self, store: Store) -> None:
         self.store = store
 
     def name(self) -> str:
+        """返回工具名称"""
         return "save_foundation"
 
     def execute(self, args: dict[str, Any]) -> dict[str, Any]:
+        """
+        执行基础设定保存
+        
+        Args:
+            args: 参数字典，包含：
+                - type: 设定类型（premise/outline/layered_outline/characters/world_rules等）
+                - content: 设定内容
+                - scale: 规划层级
+                - volume: 卷号（用于expand_arc/append_volume/mark_final）
+                - arc: 篇章号（用于expand_arc）
+        
+        Returns:
+            保存结果字典，包含剩余未完成的设定项
+        """
         foundation_type = str(args.get("type", "") or "").strip()
         if not foundation_type:
             raise ValueError("type is required")
@@ -160,6 +189,12 @@ class SaveFoundationTool:
         return result
 
     def _remaining(self) -> list[str]:
+        """
+        检查尚未完成的基础设定项
+        
+        Returns:
+            缺失的设定项列表
+        """
         missing: list[str] = []
         if not self.store.outline.load_premise():
             missing.append("premise")

@@ -16,4 +16,4 @@ CREATE TABLE IF NOT EXISTS story_run (
     updated_at TIMESTAMP NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_story_run_story_id ON story_run(story_id);
+CREATE INDEX idx_story_run_story_id ON story_run(story_id);

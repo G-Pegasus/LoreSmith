@@ -43,28 +43,28 @@ def main() -> int:
         raise
 
     loop = build_coordinator_loop(cfg_default, store, lambda event: None, lambda channel, delta: None)
-    if not isinstance(loop.backend, LangGraphRuntime):
+    if not isinstance(loop, LangGraphRuntime):
         raise RuntimeError("default backend should be langgraph")
 
     cfg_langgraph = _cfg()
-    loop = build_coordinator_loop(cfg_langgraph, store, lambda event: None, lambda channel, delta: None)
-    if not isinstance(loop.backend, LangGraphRuntime):
+    runtime = build_coordinator_loop(cfg_langgraph, store, lambda event: None, lambda channel, delta: None)
+    if not isinstance(runtime, LangGraphRuntime):
         raise RuntimeError("langgraph backend not selected")
-
-    runtime = LangGraphRuntime(cfg_langgraph, loop.backend.runner, store, lambda event: None, lambda channel, delta: None)
     compiled = runtime._build_graph()
     if compiled is None:
         raise RuntimeError("langgraph graph did not compile")
     graph_view = runtime.graph.get_graph()
     node_ids = set(graph_view.nodes)
     required_nodes = {
-        "plan_chapter",
-        "commit_chapter",
-        "review",
-        "arc_summary",
-        "volume_summary",
-        "expand_arc",
+        "load_context",
+        "dispatch",
+        "architect_plan",
+        "writer_write",
+        "editor_commit",
+        "editor_review",
+        "architect_summary",
         "checkpoint",
+        "finish",
     }
     missing = sorted(required_nodes - node_ids)
     if missing:
