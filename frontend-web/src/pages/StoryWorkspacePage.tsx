@@ -309,6 +309,29 @@ export function StoryWorkspacePage() {
     return <div className='panel page-empty'>作品工作台加载失败，请确认故事数据是否可用。</div>
   }
 
+  const handleContinueRun = async () => {
+    const shouldResumeRun = Boolean(
+      workspace.runBridge?.activeRunId && (runState?.awaitingConfirmation || runState?.status === 'waiting_input' || runState?.status === 'idle'),
+    )
+    if (workspace.runBridge?.activeRunId && shouldResumeRun) {
+      setMode('run')
+      setIsFollowingRun(true)
+      setIsContinuingRun(true)
+      setStreamingRunText('')
+      if (runState?.awaitingConfirmation) {
+        await continueMutation.mutateAsync({ runId: workspace.runBridge.activeRunId, payload: { decision: 'continue' } })
+      } else {
+        await continueMutation.mutateAsync({ runId: workspace.runBridge.activeRunId, payload: {} })
+      }
+      return
+    }
+
+    setIsFollowingRun(true)
+    setMode('run')
+    setStreamingRunText('')
+    await runMutation.mutateAsync(referenceDraft.premise || workspace.premise)
+  }
+
   return (
     <section className='workspace-page'>
       <WorkspaceTreePanel
@@ -328,6 +351,8 @@ export function StoryWorkspacePage() {
         onCreateNode={(parentId, type) => {
           createNodeMutation.mutate({ workspace, parentId, type })
         }}
+        onContinueRun={handleContinueRun}
+        isBusy={assistantMutation.isPending || runMutation.isPending || continueMutation.isPending}
       />
 
       <div className='workspace-page__center'>
@@ -364,32 +389,8 @@ export function StoryWorkspacePage() {
         selectedNodeId={selectedNodeId}
         isPending={assistantMutation.isPending || runMutation.isPending || continueMutation.isPending}
         streamingText={streamingAssistantText}
-        awaitingConfirmation={runState?.awaitingConfirmation ?? null}
-        runStatus={runState?.status ?? workspace.runBridge?.runSyncStatus ?? null}
-        isContinuingRun={isContinuingRun}
         onSubmit={async (instruction) => {
           await assistantMutation.mutateAsync({ workspace, instruction })
-        }}
-        onContinueRun={async () => {
-          const shouldResumeRun = Boolean(
-            workspace.runBridge?.activeRunId && (runState?.awaitingConfirmation || runState?.status === 'waiting_input' || runState?.status === 'idle'),
-          )
-          if (workspace.runBridge?.activeRunId && shouldResumeRun) {
-            setMode('run')
-            setIsFollowingRun(true)
-            setIsContinuingRun(true)
-            setStreamingRunText('')
-            if (runState?.awaitingConfirmation) {
-              await continueMutation.mutateAsync({ runId: workspace.runBridge.activeRunId, payload: { decision: 'continue' } })
-            } else {
-              await continueMutation.mutateAsync({ runId: workspace.runBridge.activeRunId, payload: {} })
-            }
-          } else {
-            setIsFollowingRun(true)
-            setMode('run')
-            setStreamingRunText('')
-            await runMutation.mutateAsync(referenceDraft.premise || workspace.premise)
-          }
         }}
       />
     </section>

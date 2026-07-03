@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { BookOpen, ChevronDown, ChevronRight, FileText, FolderOpen, Globe2, Network, Plus, Sparkles } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import type { StoryWorkspace, WorkspaceNode, WorkspaceNodeType } from '../../lib/types/api'
 
 type WorkspaceTreePanelProps = {
@@ -7,6 +8,8 @@ type WorkspaceTreePanelProps = {
   activeNodeId: string | null
   onSelect: (nodeId: string) => void
   onCreateNode: (parentId: string | null, type: WorkspaceNodeType) => void
+  onContinueRun: () => Promise<void>
+  isBusy?: boolean
 }
 
 const typeLabel: Record<WorkspaceNodeType, string> = {
@@ -22,9 +25,10 @@ function chunkChapters(chapters: WorkspaceNode[]) {
   return chunks
 }
 
-export function WorkspaceTreePanel({ workspace, activeNodeId, onSelect, onCreateNode }: WorkspaceTreePanelProps) {
+export function WorkspaceTreePanel({ workspace, activeNodeId, onSelect, onCreateNode, onContinueRun, isBusy = false }: WorkspaceTreePanelProps) {
   const [expandedVolumes, setExpandedVolumes] = useState<Record<string, boolean>>({})
   const [expandedChapterGroups, setExpandedChapterGroups] = useState<Record<string, boolean>>({})
+  const navigate = useNavigate()
   const roots = useMemo(
     () => workspace.nodes.filter((node) => node.parentId === null && node.type === 'volume').sort((a, b) => a.order - b.order),
     [workspace.nodes],
@@ -59,12 +63,10 @@ export function WorkspaceTreePanel({ workspace, activeNodeId, onSelect, onCreate
   return (
     <aside className='workspace-sidebar panel'>
       <div className='workspace-sidebar__header'>
-        <div>
-          <div className='workspace-sidebar__eyebrow'>共享工作台</div>
-          <h2>{workspace.title}</h2>
-        </div>
-        <button type='button' className='field__link' onClick={() => onCreateNode(null, 'volume')}>
-          + 新建卷
+        <BookOpen size={17} />
+        <h2>{workspace.title}</h2>
+        <button type='button' className='workspace-sidebar__icon-button' aria-label='新建卷' onClick={() => onCreateNode(null, 'volume')}>
+          <Plus size={16} />
         </button>
       </div>
 
@@ -72,6 +74,21 @@ export function WorkspaceTreePanel({ workspace, activeNodeId, onSelect, onCreate
         <span>{counts.volumes} 卷</span>
         <span>{counts.chapters} 章</span>
         <span>{workspace.localOnly ? '本地草稿模式' : '云端工作台'}</span>
+      </div>
+
+      <div className='workspace-tree__utility' aria-label='创作资料'>
+        <button type='button' className='workspace-tree__utility-item is-active'>
+          <FolderOpen size={14} />
+          <span>大纲与章节</span>
+        </button>
+        <button type='button' className='workspace-tree__utility-item' onClick={() => navigate(`/stories/${workspace.storyId}/reference`)}>
+          <Globe2 size={14} />
+          <span>世界观设定</span>
+        </button>
+        <button type='button' className='workspace-tree__utility-item' onClick={() => navigate(`/stories/${workspace.storyId}/reference`)}>
+          <Network size={14} />
+          <span>人物关系</span>
+        </button>
       </div>
 
       <div className='workspace-tree'>
@@ -92,7 +109,10 @@ export function WorkspaceTreePanel({ workspace, activeNodeId, onSelect, onCreate
                   {isVolumeOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 </button>
                 <button type='button' className='workspace-tree__node-main' onClick={() => onSelect(volume.id)}>
-                  <span className='workspace-tree__node-type'>{typeLabel.volume}</span>
+                  <span className='workspace-tree__node-type'>
+                    <FolderOpen size={14} />
+                    {typeLabel.volume}
+                  </span>
                   <span className='workspace-tree__node-title'>{volume.title}</span>
                 </button>
               </div>
@@ -125,7 +145,10 @@ export function WorkspaceTreePanel({ workspace, activeNodeId, onSelect, onCreate
                                 className={`workspace-tree__node workspace-tree__node--chapter ${activeNodeId === chapter.id ? 'is-active' : ''}`}
                                 onClick={() => onSelect(chapter.id)}
                               >
-                                <span className='workspace-tree__node-type'>{String(start + index).padStart(2, '0')}</span>
+                                <span className='workspace-tree__node-type'>
+                                  <FileText size={13} />
+                                  {String(start + index).padStart(2, '0')}
+                                </span>
                                 <span className='workspace-tree__node-title'>{chapter.title}</span>
                               </button>
                             ))}
@@ -140,13 +163,21 @@ export function WorkspaceTreePanel({ workspace, activeNodeId, onSelect, onCreate
               {activeNodeId === volume.id ? (
                 <div className='workspace-tree__actions'>
                   <button type='button' className='workspace-tree__add' onClick={() => onCreateNode(volume.id, 'chapter')}>
-                    + 新建章
+                    <Plus size={13} />
+                    新建章
                   </button>
                 </div>
               ) : null}
             </div>
           )
         })}
+      </div>
+
+      <div className='workspace-sidebar__footer'>
+        <button type='button' className='workspace-sidebar__continue' disabled={isBusy} onClick={() => void onContinueRun()}>
+          <Sparkles size={16} />
+          <span>{isBusy ? 'AI 正在写作' : 'AI 续写下一章'}</span>
+        </button>
       </div>
     </aside>
   )

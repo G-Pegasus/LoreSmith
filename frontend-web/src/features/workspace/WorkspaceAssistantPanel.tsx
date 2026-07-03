@@ -1,30 +1,15 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Send } from 'lucide-react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { BookOpen, PenLine, Send, Settings, Sparkles } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { useNavigate } from 'react-router-dom'
-import type { AwaitingConfirmation, StoryWorkspace } from '../../lib/types/api'
+import type { StoryWorkspace } from '../../lib/types/api'
 
 type WorkspaceAssistantPanelProps = {
   workspace: StoryWorkspace
   selectedNodeId: string | null
   isPending: boolean
   streamingText?: string
-  awaitingConfirmation?: AwaitingConfirmation | null
   onSubmit: (instruction: string) => Promise<void>
-  onContinueRun: () => Promise<void>
-  runStatus?: string | null
-  isContinuingRun?: boolean
-}
-
-function WorkspaceStatusSection({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className='workspace-status-section'>
-      <div className='workspace-reference-section__header'>
-        <strong>{title}</strong>
-      </div>
-      <div className='workspace-sidecard workspace-sidecard--reference'>{children}</div>
-    </section>
-  )
 }
 
 export function WorkspaceAssistantPanel({
@@ -32,14 +17,12 @@ export function WorkspaceAssistantPanel({
   selectedNodeId,
   isPending,
   streamingText = '',
-  awaitingConfirmation,
   onSubmit,
-  onContinueRun,
-  runStatus,
-  isContinuingRun = false,
 }: WorkspaceAssistantPanelProps) {
   const [instruction, setInstruction] = useState('')
+  const [assistantMode, setAssistantMode] = useState<'chat' | 'continue' | 'polish'>('chat')
   const threadRef = useRef<HTMLDivElement | null>(null)
+  const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const navigate = useNavigate()
 
   const displayedMessages = useMemo(
@@ -59,15 +42,26 @@ export function WorkspaceAssistantPanel({
     [streamingText, workspace.assistantThread],
   )
 
-  const canContinueRun = Boolean(
-    workspace.runBridge?.activeRunId && (awaitingConfirmation || runStatus === 'waiting_input' || runStatus === 'idle' || runStatus === 'failed' || runStatus === 'canceled'),
-  )
+  const inputPlaceholder = selectedNodeId
+    ? assistantMode === 'continue'
+      ? '和 AI 讨论下一段怎么写...'
+      : assistantMode === 'polish'
+        ? '让 AI 润色当前章节片段...'
+        : '和 AI 讨论当前章节...'
+    : '和 AI 讨论这部作品...'
 
   useEffect(() => {
     const thread = threadRef.current
     if (!thread) return
     thread.scrollTo({ top: thread.scrollHeight, behavior: 'smooth' })
   }, [displayedMessages.length, streamingText])
+
+  useLayoutEffect(() => {
+    const input = inputRef.current
+    if (!input) return
+    input.style.height = '42px'
+    input.style.height = `${Math.min(Math.max(input.scrollHeight, 42), 112)}px`
+  }, [instruction])
 
   const submit = async () => {
     const text = instruction.trim()
@@ -79,9 +73,24 @@ export function WorkspaceAssistantPanel({
   return (
     <aside className='workspace-assistant panel'>
       <div className='assistant-panel__header'>
-        <h2>AI 助手</h2>
-        <button type='button' className='secondary-button secondary-button--small' onClick={() => navigate(`/stories/${workspace.storyId}/reference`)}>
-          资料页
+        <h2>AI 创作助手</h2>
+        <button type='button' className='workspace-assistant__header-button' aria-label='打开资料页' onClick={() => navigate(`/stories/${workspace.storyId}/reference`)}>
+          <Settings size={16} />
+        </button>
+      </div>
+
+      <div className='workspace-assistant__segments' aria-label='助手模式'>
+        <button type='button' className={assistantMode === 'chat' ? 'is-active' : ''} onClick={() => setAssistantMode('chat')}>
+          <Sparkles size={14} />
+          <span>灵感对话</span>
+        </button>
+        <button type='button' className={assistantMode === 'continue' ? 'is-active' : ''} onClick={() => setAssistantMode('continue')}>
+          <BookOpen size={14} />
+          <span>续写助手</span>
+        </button>
+        <button type='button' className={assistantMode === 'polish' ? 'is-active' : ''} onClick={() => setAssistantMode('polish')}>
+          <PenLine size={14} />
+          <span>文笔润色</span>
         </button>
       </div>
 
@@ -108,10 +117,11 @@ export function WorkspaceAssistantPanel({
 
       <div className='assistant-panel__composer'>
         <textarea
+          ref={inputRef}
           className='textarea assistant-panel__input workspace-assistant__input'
           value={instruction}
           onChange={(event) => setInstruction(event.target.value)}
-          placeholder={selectedNodeId ? '和 AI 讨论当前章节...' : '和 AI 讨论这部作品...'}
+          placeholder={inputPlaceholder}
           disabled={isPending}
         />
         <button
@@ -122,22 +132,6 @@ export function WorkspaceAssistantPanel({
         >
           <Send size={18} />
         </button>
-      </div>
-
-      <div className='workspace-panel-list workspace-panel-list--status'>
-        <WorkspaceStatusSection title='运行状态'>
-          <p>{isContinuingRun ? '继续写作请求已发出，正在等待新的流式输出。' : runStatus ? `当前状态：${runStatus}` : '当前暂无运行状态。'}</p>
-          <button type='button' className='primary-button primary-button--small workspace-reference-entry' disabled={isPending || !canContinueRun} onClick={() => void onContinueRun()}>
-            {runStatus === 'failed' || runStatus === 'canceled' ? '重新编写' : '继续编写'}
-          </button>
-        </WorkspaceStatusSection>
-
-        {awaitingConfirmation ? (
-          <WorkspaceStatusSection title='等待继续编写'>
-            <strong>已写到第 {awaitingConfirmation.pauseAfterChapter} 章</strong>
-            <p>当前已完成 {awaitingConfirmation.completedCount} 章，确认后将从第 {awaitingConfirmation.nextChapter} 章继续生成。</p>
-          </WorkspaceStatusSection>
-        ) : null}
       </div>
     </aside>
   )
