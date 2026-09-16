@@ -1,7 +1,9 @@
 package com.ainovel.platform.application;
 
 import com.ainovel.platform.domain.model.StoryInspirationMessageRecord;
+import com.ainovel.platform.interfaces.dto.InspirationSettingsResponse;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,9 +16,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -27,33 +29,82 @@ import java.util.function.Consumer;
 @Component
 public class InspirationAiClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(InspirationAiClient.class);
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
+    private static final double MAIN_TEMPERATURE = 0.78;
+    private static final double EXTRACT_TEMPERATURE = 0.2;
+    /**
+     * 抽取默认超时。实测（deepseek 系推理模型 + {@code thinking: disabled}）单次约 2-4 秒，
+     * 取 15 秒作为安全边界；调试期可用 AINOVEL_EXTRACT_TIMEOUT_MS 调短。
+     */
+    private static final long DEFAULT_EXTRACT_TIMEOUT_MILLIS = 15_000L;
+
+    /**
+     * 主对话提示词：围绕"设定四件套"推进，不再每轮输出"可直接填入的精炼设定"。
+     * 那段总结会和确认单形成两个来源，"每轮都追问"则让"问完"永不可达。
+     */
     public static final String SYSTEM_PROMPT = """
-            你是“墨韵AI”的专业小说创作灵感顾问，只负责帮助用户完成作品构思，不直接替用户创建作品，也不输出冗长正文。
+            你是“墨韵AI”的小说创作灵感顾问，负责帮用户把作品构思打磨到“可以直接开写”。
 
-            角色定位：
-            - 你是资深网文策划、故事编辑和世界观架构师。
-            - 你擅长从用户零散设定中识别题材、叙事风格、核心矛盾、人物欲望和可持续连载的故事引擎。
-            - 你必须主动保护用户原创性：不要套模板替换名词，不要泛泛而谈，不要用空洞宣传语。
+            你要和用户一起敲定的四件事（称为“设定四件套”）：
+            1. 作品标题
+            2. 世界观设定
+            3. 角色设定（至少一个主要角色：姓名 + 定位 + 描述）
+            4. 故事简介
 
-            输出逻辑：
-            1. 先用 2-3 句复述你理解到的创作目标，指出最有潜力的故事钩子。
-            2. 再给“设定拓展”：补充世界规则、冲突来源、人物关系、隐藏代价或反转可能。
-            3. 再给“大纲建议”：优先输出黄金三章或 5-8 个阶段性剧情节点，说明每段的读者期待。
-            4. 再给“可直接填入新建作品页的精炼设定”：用一段 150-300 字中文总结。
-            5. 最后提出 2-3 个高价值追问，引导用户继续澄清。
+            工作方式：
+            - 每轮先回应用户刚说的内容，点出其中有价值的钩子，再推进“四件套”里还没定下来的部分。
+            - 只针对“尚未确定”的项追问，一次最多问 2 个问题。已经确定的项不要重复询问。
+            - 如果用户的新说法与已确定的设定冲突，直接指出冲突，请用户确认取舍。
+            - 不要在回复里写“可直接填入新建作品页的精炼设定”这类总结段落 —— 系统会自动把设定整理成确认单。
+            - 当四件套全部确定后，明确告诉用户“设定已完整，可以填入工作台了”，不要再提新问题。
+
+            设定质量要求：
+            - 标题短而有钩子，避免《XX之路》《XX纪》这类空泛命名。
+            - 世界观要说清时代/地点/背景，并包含一条会反复制造麻烦的规则（身份限制、资源稀缺、契约代价、舆论审判等）。
+            - 角色要有明确的欲望与代价，不要只写身份标签。
+            - 故事简介要说清“谁、在什么处境下、要做什么、最大的阻力是什么”。
+            - 保护用户原创性：不要套模板替换名词，不要泛泛而谈。
 
             记忆规则：
-            - 你会收到“长期记忆摘要”和最近多轮对话。必须延续用户已确认的设定，不得遗忘或自相矛盾。
+            - 你会收到“长期记忆摘要”“当前设定草稿”和最近多轮对话。
+            - “当前设定草稿”是系统整理出的已确定设定，以它为准：不要重复询问，也不要自相矛盾。
             - 当用户修改设定时，以最新说法为准，并指出哪些旧建议需要同步调整。
-            - 如果信息不足，先给可选方向，不要强行定死。
 
             风格要求：
             - 中文输出，结构清晰，标题短，建议具体。
             - 避免“命运齿轮开始转动”“前所未有的挑战”等 AI 腔套话。
             - 不输出安全无关免责声明。
+            """;
+
+    /**
+     * 抽取提示词：把对话蒸馏成结构化设定草稿。只输出 JSON，不输出任何解释。
+     *
+     * <p>措辞里刻意强调"宁可写得短，也不要留空"：抽取结果直接驱动四槽位判定，任何一项被模型
+     * 顺手留空都会让确认单不出卡。实测关掉思维链后模型会偷懒漏字段，这条约束是必需的。</p>
+     */
+    public static final String EXTRACT_PROMPT = """
+            你是小说设定抽取器。从对话中抽取这部作品的“设定四件套”，输出 JSON。
+
+            四个字段的含义：
+            - title：作品标题。
+            - worldSetting：世界观设定，说清时代/地点/背景、核心规则与主要冲突来源。
+            - characters：角色数组，每项 { "name": 姓名, "role": 定位, "description": 描述 }。role 用“主角”“配角”“反派”这类短标签；description 说清身份、欲望与代价。
+            - synopsis：故事简介，说清谁、在什么处境下、要做什么、最大阻力是什么。
+
+            硬性要求：
+            1. 只输出 JSON，不要解释，不要 Markdown 代码块。
+            2. 输出“全量草稿”：上一版草稿中已经确定、且本轮对话没有修改的字段，必须原样照抄，禁止改写、精简或重新润色。
+            3. **宁可写得短，也不要留空**。只要对话里出现过能判断出该字段的信息，就必须写出来；信息不完整时按已有内容如实写，等后续轮次再补，不要为了凑字数编造，也不要因为“还不够丰满”就留空。
+            4. worldSetting 只要对话提到时代、地点、背景或任何一条世界规则，就必须输出；synopsis 只要求说清主线，不要求完整。
+            5. 只有整段对话里确实完全没有涉及某个字段时，才输出空字符串或空数组。
+            6. synopsis 必须来自对话内容 —— 禁止照抄任何默认文案或占位文案。
+            7. 不要输出思考过程。
+
+            输出格式：
+            { "draft": { "title": "", "worldSetting": "", "characters": [], "synopsis": "" } }
             """;
 
     private final WebClient webClient;
@@ -64,7 +115,12 @@ public class InspirationAiClient {
         this.environment = environment;
     }
 
-    public String stream(String memorySummary, List<StoryInspirationMessageRecord> recentMessages, Consumer<String> deltaConsumer) {
+    public String stream(
+            String memorySummary,
+            List<StoryInspirationMessageRecord> recentMessages,
+            String draftContext,
+            Consumer<String> deltaConsumer
+    ) {
         LlmConfig config = loadDevConfig();
         if (config.apiKey().isBlank()) {
             return emitFallback(memorySummary, recentMessages, deltaConsumer);
@@ -75,9 +131,9 @@ public class InspirationAiClient {
         try {
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("model", config.model());
-            payload.put("temperature", 0.78);
+            payload.put("temperature", MAIN_TEMPERATURE);
             payload.put("stream", true);
-            payload.put("messages", buildMessages(memorySummary, recentMessages));
+            payload.put("messages", buildMessages(memorySummary, recentMessages, draftContext));
 
             webClient.post()
                     .uri(trimTrailingSlash(config.baseUrl()) + "/chat/completions")
@@ -106,64 +162,168 @@ public class InspirationAiClient {
         }
     }
 
+    /**
+     * 从最近几轮对话中抽取设定草稿。非流式、低温度、关闭思维链、带硬超时。
+     *
+     * <p><b>为什么必须关闭思维链</b>：抽取本质上只是把对话内容搬运成 JSON，不需要推理。
+     * 实测推理模型在开启思维链时，一次抽取会额外生成 1400+ 个 reasoning token，
+     * 耗时 30-76 秒 —— 而 {@code done} 事件压在抽取之后，这段等待会直接变成用户可见的卡顿。
+     * 关闭后回落到 2-4 秒。可用 {@code dev_config.json} 的 {@code extract.disable_thinking} 关掉。</p>
+     *
+     * <p><b>失败即返回 null，绝不走 {@link #emitFallback}</b>：那段固定模板文案一旦被当作草稿解析就是垃圾写库。
+     * 调用方必须把 null 视为“本轮跳过抽取”，并保证 {@code done} 事件照常发出。</p>
+     *
+     * @param currentDraftJson 上一版草稿 JSON，可为 null / 空
+     * @return 抽取结果；失败或超时返回 null
+     */
+    public InspirationSettingsResponse extractDraft(
+            String currentDraftJson,
+            List<StoryInspirationMessageRecord> recentMessages
+    ) {
+        ExtractOptions options = loadExtractOptions();
+        LlmConfig config = options.config();
+        if (config.apiKey().isBlank()) {
+            return null;
+        }
+        try {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("model", config.model());
+            payload.put("temperature", EXTRACT_TEMPERATURE);
+            payload.put("stream", false);
+            if (options.disableThinking()) {
+                payload.put("thinking", Map.of("type", "disabled"));
+            }
+            payload.put("messages", List.of(
+                    Map.of("role", "system", "content", EXTRACT_PROMPT),
+                    Map.of("role", "user", "content", buildExtractInput(currentDraftJson, recentMessages))
+            ));
+
+            String body = webClient.post()
+                    .uri(trimTrailingSlash(config.baseUrl()) + "/chat/completions")
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + config.apiKey())
+                    .accept(MediaType.APPLICATION_JSON)
+                    .bodyValue(payload)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .timeout(Duration.ofMillis(options.timeoutMillis()))
+                    .block();
+
+            return parseExtractResponse(body);
+        } catch (RuntimeException ex) {
+            LOGGER.warn("inspiration draft extraction skipped: {}", ex.getMessage());
+            return null;
+        }
+    }
+
+    private String buildExtractInput(String currentDraftJson, List<StoryInspirationMessageRecord> recentMessages) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("当前草稿（上一版）：\n");
+        builder.append(currentDraftJson == null || currentDraftJson.isBlank() ? "（还没有草稿）" : currentDraftJson);
+        builder.append("\n\n最近对话：\n");
+        if (recentMessages == null || recentMessages.isEmpty()) {
+            builder.append("（暂无）\n");
+        } else {
+            recentMessages.forEach(message -> builder
+                    .append("user".equals(message.role()) ? "用户：" : "AI：")
+                    .append(message.content())
+                    .append('\n'));
+        }
+        return builder.toString();
+    }
+
     @SuppressWarnings("unchecked")
-    private LlmConfig loadDevConfig() {
-        Path configPath = Path.of(readConfig("AINOVEL_CONFIG", "ainovel.config-path", "dev_config.json"));
-        if (!Files.isRegularFile(configPath)) {
-            return LlmConfig.empty();
+    private InspirationSettingsResponse parseExtractResponse(String body) {
+        if (body == null || body.isBlank()) {
+            return null;
         }
         try {
-            Map<String, Object> root = OBJECT_MAPPER.readValue(configPath.toFile(), MAP_TYPE);
-            String provider = stringValue(root.get("provider"));
-            String model = stringValue(root.get("model"));
-            Object providersRaw = root.get("providers");
-            if (!(providersRaw instanceof Map<?, ?> providersMap)) {
-                return LlmConfig.empty();
+            Map<String, Object> root = OBJECT_MAPPER.readValue(body, MAP_TYPE);
+            Object choices = root.get("choices");
+            if (!(choices instanceof List<?> list) || list.isEmpty() || !(list.getFirst() instanceof Map<?, ?> first)) {
+                return null;
             }
-            Object providerRaw = providersMap.get(provider);
-            if (!(providerRaw instanceof Map<?, ?> providerMap)) {
-                return LlmConfig.empty();
+            String content = null;
+            Object message = first.get("message");
+            if (message instanceof Map<?, ?> messageMap) {
+                content = messageMap.get("content") == null ? null : String.valueOf(messageMap.get("content"));
             }
-            String apiKey = stringValue(providerMap.get("api_key"));
-            String baseUrl = stringValue(providerMap.get("base_url"));
-            String providerModel = stringValue(providerMap.get("model"));
-            if (model.isBlank()) {
-                model = providerModel;
+            if (content == null && first.get("text") != null) {
+                content = String.valueOf(first.get("text"));
             }
-            if (baseUrl.isBlank()) {
-                baseUrl = "https://api.openai.com/v1";
+            String json = extractJsonObject(content);
+            if (json.isBlank()) {
+                LOGGER.warn("inspiration draft extraction returned no JSON object");
+                return null;
             }
-            if (model.isBlank()) {
-                return LlmConfig.empty();
+            Map<String, Object> parsed = OBJECT_MAPPER.readValue(json, MAP_TYPE);
+            Object draftNode = parsed.get("draft");
+            if (!(draftNode instanceof Map<?, ?>)) {
+                // 容错：模型直接把草稿吐在顶层
+                draftNode = parsed;
             }
-            return new LlmConfig(apiKey, model, baseUrl);
-        } catch (IOException ex) {
-            return LlmConfig.empty();
+            InspirationSettingsResponse settings = OBJECT_MAPPER.convertValue(draftNode, InspirationSettingsResponse.class);
+            return normalize(settings);
+        } catch (IOException | IllegalArgumentException ex) {
+            LOGGER.warn("inspiration draft extraction response is not parsable: {}", ex.getMessage());
+            return null;
         }
     }
 
-    private String stringValue(Object value) {
-        return value == null ? "" : String.valueOf(value).trim();
+    private String extractJsonObject(String text) {
+        if (text == null) {
+            return "";
+        }
+        int start = text.indexOf('{');
+        int end = text.lastIndexOf('}');
+        if (start < 0 || end <= start) {
+            return "";
+        }
+        return text.substring(start, end + 1);
     }
 
-    private long effectiveTimeoutSeconds() {
-        String raw = environment.getProperty("AINOVEL_HTTP_TIMEOUT", "").trim();
-        if (raw.isBlank()) {
-            return 120;
+    /** 去掉空白、丢掉没有名字的角色，避免"空壳角色"把四槽位判定顶成齐备。 */
+    private InspirationSettingsResponse normalize(InspirationSettingsResponse settings) {
+        if (settings == null) {
+            return null;
         }
-        try {
-            long value = Math.round(Double.parseDouble(raw));
-            return Math.max(10, value);
-        } catch (NumberFormatException ex) {
-            return 120;
-        }
+        List<InspirationSettingsResponse.CharacterSetting> characters = settings.characters() == null
+                ? List.of()
+                : settings.characters().stream()
+                        .filter(character -> character != null && !isBlank(character.name()))
+                        .map(character -> new InspirationSettingsResponse.CharacterSetting(
+                                character.name().trim(),
+                                trimToEmpty(character.role()),
+                                trimToEmpty(character.description())
+                        ))
+                        .toList();
+        return new InspirationSettingsResponse(
+                trimToEmpty(settings.title()),
+                trimToEmpty(settings.worldSetting()),
+                characters,
+                trimToEmpty(settings.synopsis())
+        );
     }
 
-    private List<Map<String, String>> buildMessages(String memorySummary, List<StoryInspirationMessageRecord> recentMessages) {
+    private String trimToEmpty(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    private List<Map<String, String>> buildMessages(
+            String memorySummary,
+            List<StoryInspirationMessageRecord> recentMessages,
+            String draftContext
+    ) {
         List<Map<String, String>> messages = new ArrayList<>();
         messages.add(Map.of("role", "system", "content", SYSTEM_PROMPT));
         if (memorySummary != null && !memorySummary.isBlank()) {
             messages.add(Map.of("role", "system", "content", "长期记忆摘要：\n" + memorySummary));
+        }
+        if (draftContext != null && !draftContext.isBlank()) {
+            messages.add(Map.of("role", "system", "content", draftContext));
         }
         recentMessages.forEach(message -> messages.add(Map.of(
                 "role", message.role(),
@@ -190,17 +350,7 @@ public class InspirationAiClient {
                 - 给世界观增加一条会反复制造麻烦的规则，例如身份限制、资源稀缺、契约代价或舆论审判。
                 - 让反派或阻力方拥有合理目标，不只是阻止主角，而是与主角争夺同一个稀缺结果。
 
-                ## 大纲建议
-                1. 第一章用一个不可逆事件开场，让主角必须行动。
-                2. 第二章展示世界规则的代价，并引出第一个关键人物。
-                3. 第三章让主角做出错误但合理的选择，制造持续追读的悬念。
-                4. 中段安排一次认知反转：主角以为自己在解决问题，其实在靠近更大的真相。
-                5. 阶段结尾回收一个早期细节，同时打开更大的矛盾。
-
-                ## 可直接填入新建作品页的精炼设定
-                这是一部以强冲突和持续反转驱动的长篇故事。主角在一个规则严苛、代价明确的世界中被迫追求某个不可替代的目标。每一次推进都会带来新的关系变化和隐藏风险，人物选择既解决眼前危机，也不断暴露更深层的秘密。
-
-                ## 继续追问
+                ## 追问
                 - 主角最不能失去的东西是什么？
                 - 这个世界最核心、最不可违背的规则是什么？
                 - 你希望读者在前三章主要感受到爽感、悬疑、心疼，还是暧昧张力？
@@ -266,7 +416,6 @@ public class InspirationAiClient {
         return Math.min(newline, carriageReturn);
     }
 
-    @SuppressWarnings("unchecked")
     private void processStreamLine(String rawLine, StringBuilder assistantContent, Consumer<String> deltaConsumer) {
         String line = rawLine == null ? "" : rawLine.trim();
         if (line.isBlank() || line.startsWith(":")) {
@@ -320,6 +469,119 @@ public class InspirationAiClient {
         return environment.getProperty(propertyName, fallback).trim();
     }
 
+    private long effectiveTimeoutSeconds() {
+        String raw = environment.getProperty("AINOVEL_HTTP_TIMEOUT", "").trim();
+        if (raw.isBlank()) {
+            return 120;
+        }
+        try {
+            long value = Math.round(Double.parseDouble(raw));
+            return Math.max(10, value);
+        } catch (NumberFormatException ex) {
+            return 120;
+        }
+    }
+
+    /**
+     * 抽取调用的三个旋钮。默认全部可跑，允许通过 {@code dev_config.json} 的 {@code extract} 段或
+     * 环境变量 {@code AINOVEL_EXTRACT_TIMEOUT_MS} 覆盖 —— 不改配置也能工作，是刻意的。
+     */
+    private ExtractOptions loadExtractOptions() {
+        LlmConfig main = loadDevConfig();
+        String model = main.model();
+        boolean disableThinking = true;
+        long timeoutMillis = envExtractTimeoutOrDefault();
+
+        Map<String, Object> extract = readExtractBlock();
+        if (extract != null) {
+            String overrideModel = stringValue(extract.get("model"));
+            if (!overrideModel.isBlank()) {
+                model = overrideModel;
+            }
+            if (extract.get("disable_thinking") instanceof Boolean flag) {
+                disableThinking = flag;
+            }
+            if (environment.getProperty("AINOVEL_EXTRACT_TIMEOUT_MS", "").isBlank()) {
+                Object rawTimeout = extract.get("timeout_ms");
+                if (rawTimeout != null) {
+                    try {
+                        timeoutMillis = Math.max(1, Math.round(Double.parseDouble(String.valueOf(rawTimeout).trim())));
+                    } catch (NumberFormatException ex) {
+                        LOGGER.warn("ignored invalid extract.timeout_ms: {}", rawTimeout);
+                    }
+                }
+            }
+        }
+        return new ExtractOptions(new LlmConfig(main.apiKey(), model, main.baseUrl()), disableThinking, timeoutMillis);
+    }
+
+    private long envExtractTimeoutOrDefault() {
+        String raw = environment.getProperty("AINOVEL_EXTRACT_TIMEOUT_MS", "").trim();
+        if (raw.isBlank()) {
+            return DEFAULT_EXTRACT_TIMEOUT_MILLIS;
+        }
+        try {
+            return Math.max(1, Math.round(Double.parseDouble(raw)));
+        } catch (NumberFormatException ex) {
+            return DEFAULT_EXTRACT_TIMEOUT_MILLIS;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> readExtractBlock() {
+        Path configPath = Path.of(readConfig("AINOVEL_CONFIG", "ainovel.config-path", "dev_config.json"));
+        if (!Files.isRegularFile(configPath)) {
+            return null;
+        }
+        try {
+            Map<String, Object> root = OBJECT_MAPPER.readValue(configPath.toFile(), MAP_TYPE);
+            Object extract = root.get("extract");
+            return extract instanceof Map<?, ?> map ? (Map<String, Object>) map : null;
+        } catch (IOException ex) {
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private LlmConfig loadDevConfig() {
+        Path configPath = Path.of(readConfig("AINOVEL_CONFIG", "ainovel.config-path", "dev_config.json"));
+        if (!Files.isRegularFile(configPath)) {
+            return LlmConfig.empty();
+        }
+        try {
+            Map<String, Object> root = OBJECT_MAPPER.readValue(configPath.toFile(), MAP_TYPE);
+            String provider = stringValue(root.get("provider"));
+            String model = stringValue(root.get("model"));
+            Object providersRaw = root.get("providers");
+            if (!(providersRaw instanceof Map<?, ?> providersMap)) {
+                return LlmConfig.empty();
+            }
+            Object providerRaw = providersMap.get(provider);
+            if (!(providerRaw instanceof Map<?, ?> providerMap)) {
+                return LlmConfig.empty();
+            }
+            String apiKey = stringValue(providerMap.get("api_key"));
+            String baseUrl = stringValue(providerMap.get("base_url"));
+            String providerModel = stringValue(providerMap.get("model"));
+            if (model.isBlank()) {
+                model = providerModel;
+            }
+            if (baseUrl.isBlank()) {
+                baseUrl = "https://api.openai.com/v1";
+            }
+            if (model.isBlank()) {
+                return LlmConfig.empty();
+            }
+            return new LlmConfig(apiKey, model, baseUrl);
+        } catch (IOException ex) {
+            return LlmConfig.empty();
+        }
+    }
+
+    private String stringValue(Object value) {
+        return value == null ? "" : String.valueOf(value).trim();
+    }
+
     private String trimTrailingSlash(String value) {
         String result = value == null ? "" : value.trim();
         while (result.endsWith("/")) {
@@ -333,4 +595,6 @@ public class InspirationAiClient {
             return new LlmConfig("", "", "");
         }
     }
+
+    private record ExtractOptions(LlmConfig config, boolean disableThinking, long timeoutMillis) {}
 }

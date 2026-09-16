@@ -1,12 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Globe, Ruler, Users } from 'lucide-react'
-import type { CreateStoryRequest } from '../../lib/types/api'
+import type { CreateStoryRequest, InspirationSettings } from '../../lib/types/api'
 
 type StoryCreateFormProps = {
   onSubmit: (payload: CreateStoryRequest) => Promise<void>
   isSubmitting: boolean
   onTitleChange?: (value: string) => void
   onPromptChange?: (value: string) => void
+  /** 灵感对话确认单填入：整表覆盖本地 state，seq 变化即视为一次新的填入事件 */
+  fill?: { seq: number; settings: InspirationSettings } | null
 }
 
 type CharacterDraft = {
@@ -16,13 +18,42 @@ type CharacterDraft = {
   description: string
 }
 
-export function StoryCreateForm({ onSubmit, isSubmitting, onTitleChange, onPromptChange }: StoryCreateFormProps) {
+export function StoryCreateForm({ onSubmit, isSubmitting, onTitleChange, onPromptChange, fill }: StoryCreateFormProps) {
   const [title, setTitle] = useState('')
   const [worldSetting, setWorldSetting] = useState('')
   const [synopsis, setSynopsis] = useState('写一部充满悬念与情绪张力的长篇小说，从第一章开始创作。')
   const [characters, setCharacters] = useState<CharacterDraft[]>([])
   const [minWords, setMinWords] = useState(2000)
   const [targetWords, setTargetWords] = useState(2500)
+
+  // 确认单填入：整表覆盖，不做冲突检测（用户手填内容会被覆盖，这是 14:15 拍板的行为）。
+  useEffect(() => {
+    if (!fill) return
+    const { title: nextTitle, worldSetting: nextWorldSetting, characters: nextCharacters, synopsis: nextSynopsis } = fill.settings
+    if (nextTitle?.trim()) {
+      setTitle(nextTitle.trim())
+      onTitleChange?.(nextTitle.trim())
+    }
+    if (nextWorldSetting?.trim()) {
+      setWorldSetting(nextWorldSetting.trim())
+    }
+    if (nextCharacters?.length) {
+      setCharacters(
+        nextCharacters.map((character) => ({
+          id: crypto.randomUUID(),
+          name: character.name,
+          role: character.role ?? '',
+          description: character.description ?? '',
+        })),
+      )
+    }
+    if (nextSynopsis?.trim()) {
+      setSynopsis(nextSynopsis.trim())
+      onPromptChange?.(nextSynopsis.trim())
+    }
+    // 只在 seq 变化时执行：同一份 settings 对象重复设置不应重复覆盖用户后续编辑。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fill?.seq])
 
   const ids = useMemo(
     () => ({

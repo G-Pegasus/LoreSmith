@@ -1,5 +1,6 @@
 package com.ainovel.platform.interfaces.http;
 
+import com.ainovel.platform.domain.exception.StaleDraftException;
 import com.ainovel.platform.interfaces.dto.ErrorResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -22,6 +23,15 @@ public class ApiExceptionHandler {
         return ResponseEntity.badRequest().body(new ErrorResponse(
                 "INVALID_ARGUMENT",
                 ex.getMessage() == null ? "invalid argument" : ex.getMessage()
+        ));
+    }
+
+    /** 设定确认单已过期：草稿版本不匹配，前端应改用最新的确认单。 */
+    @ExceptionHandler(StaleDraftException.class)
+    public ResponseEntity<ErrorResponse> handleStaleDraft(StaleDraftException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new ErrorResponse(
+                "STALE_DRAFT",
+                ex.getMessage() == null ? "stale draft" : ex.getMessage()
         ));
     }
 

@@ -60,11 +60,35 @@ export type InspirationMessage = {
   createdAt: string
 }
 
+/** 设定四件套。字段名刻意对齐 StoryCreateForm 的 state 键名，填入表单时不需要任何转换层。 */
+export type InspirationSettingCharacter = {
+  name: string
+  role: string
+  description: string
+}
+
+export type InspirationSettings = {
+  title: string
+  worldSetting: string
+  characters: InspirationSettingCharacter[]
+  synopsis: string
+}
+
 export type InspirationSession = {
   sessionId: string
   memorySummary: string
   messages: InspirationMessage[]
   updatedAt: string
+  /** 当前设定草稿；尚未抽出内容时为 null */
+  draft: InspirationSettings | null
+  /** 当前草稿版本号，有实质变化才 +1 */
+  draftRevision: number
+  /** 用户最后一次确认的草稿版本号；draftRevision > confirmedRevision 即「有未确认更新」 */
+  confirmedRevision: number
+  /** 待确认卡挂载的 assistant 消息 id；没有待确认卡时为 null */
+  draftSourceMessageId: string | null
+  /** 最后一次确认的快照，用于标记「新增 / 已修改」 */
+  confirmedSettings: InspirationSettings | null
 }
 
 export type AwaitingConfirmation = {
