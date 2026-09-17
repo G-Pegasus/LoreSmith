@@ -8,6 +8,8 @@ export async function fetchInspirationSession(sessionId: string) {
 type InspirationStreamHandlers = {
   onUser?: (message: InspirationMessage) => void
   onDelta?: (delta: string) => void
+  /** 正文流完、后端开始抽取设定草稿时触发（当前只有 'extracting'） */
+  onPhase?: (phase: string) => void
 }
 
 export async function streamInspirationMessage(sessionId: string, content: string, handlers: InspirationStreamHandlers = {}) {
@@ -63,6 +65,14 @@ export async function streamInspirationMessage(sessionId: string, content: strin
       return
     }
 
+    if (eventName === 'phase') {
+      const payload = JSON.parse(data) as { phase?: string }
+      if (payload.phase) {
+        handlers.onPhase?.(payload.phase)
+      }
+      return
+    }
+
     if (eventName === 'done') {
       finalSession = JSON.parse(data) as InspirationSession
       return
@@ -92,4 +102,31 @@ export async function streamInspirationMessage(sessionId: string, content: strin
     throw new ApiError('灵感对话流式响应未完成', 'STREAM_INCOMPLETE', response.status)
   }
   return finalSession
+}
+
+/**
+ * 确认整张设定草稿。服务端会校验 expectedDraftRevision，不匹配时抛
+ * ApiError(code = 'STALE_DRAFT', status = 409)。确认只写 session 上的快照，
+ * 不写 store —— 落库仍走「保存并开始创作」。
+ */
+export async function confirmInspirationSettings(sessionId: string, expectedDraftRevision: number) {
+  return apiFetch<InspirationSession>(
+    `/api/v1/inspiration-sessions/${encodeURIComponent(sessionId)}/settings/confirm`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ expectedDraftRevision }),
+    },
+  )
+}
+
+/**
+ * 删除整个会话（含消息与设定快照）。「重置对话」用它把旧会话从库里抹掉。
+ *
+ * 注意：界面的清空不依赖这个请求 —— 那是上层轮换 sessionId 让面板重挂载完成的。
+ * 所以调用方应当 fire-and-forget，失败也不要阻断重置。
+ */
+export async function deleteInspirationSession(sessionId: string) {
+  return apiFetch<{ deleted: boolean }>(`/api/v1/inspiration-sessions/${encodeURIComponent(sessionId)}`, {
+    method: 'DELETE',
+  })
 }
